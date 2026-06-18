@@ -1,12 +1,14 @@
 import "@mdxeditor/editor/style.css";
+import "katex/dist/katex.min.css";
 import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { MDXEditorMethods } from "@mdxeditor/editor";
 import type { ExtensionToWebviewMessage } from "./markdownMessages";
+import { markflowMathPlugin } from "./mathPlugin";
 import { getVsCodeApi } from "./vscodeApi";
 
 const DEFAULT_DEBOUNCE_MS = 250;
 
-type MdxEditorModule = typeof import("@mdxeditor/editor");
+export type MdxEditorModule = typeof import("@mdxeditor/editor");
 type EditorMode = "raw" | "rich";
 
 interface RichEditorBoundaryProps {
@@ -74,6 +76,7 @@ export function App(): JSX.Element {
               }
             }),
             richEditorModule.frontmatterPlugin(),
+            markflowMathPlugin(richEditorModule),
             richEditorModule.diffSourcePlugin({ viewMode: "rich-text" }),
             richEditorModule.markdownShortcutPlugin(),
             richEditorModule.toolbarPlugin({

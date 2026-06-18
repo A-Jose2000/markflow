@@ -11,6 +11,7 @@ webview/tsconfig.json
 webview/vite.config.ts
 scripts/**
 package/**
+testing/**
 portable-markdown-editor-extension-brief.md
 tsconfig.json
 node_modules/**

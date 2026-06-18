@@ -3,5 +3,6 @@ dist/
 webview/node_modules/
 webview/dist/
 package/*.vsix
+testing/
 *.log
 *.tsbuildinfo

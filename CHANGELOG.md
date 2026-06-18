@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.12
+
+- Moved wide-table horizontal scrolling inside each table so the full Rich view does not pan sideways.
+
+## 0.1.11
+
+- Darkened table editor active and toolbar states so they no longer resemble text selection.
+- Added minimum table cell widths and horizontal scrolling for wide tables.
+- Tightened table tool button sizing to prevent row and column menu controls from overlapping cells.
+
+## 0.1.10
+
+- Added in-place LaTeX source controls in Rich mode so rendered formulas can be inspected and edited without switching the whole document to Raw mode.
+
+## 0.1.9
+
+- Added KaTeX-powered LaTeX rendering for inline `$...$` and block `$$...$$` formulas in Rich mode.
+- Added an ignored local `testing/` corpus with tricky Markdown, code, tables, and math cases.
+
 ## 0.1.8
 
 - Open Markflow in Rich mode by default.

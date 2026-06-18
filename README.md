@@ -28,7 +28,7 @@ npm run package
 Then install the generated VSIX:
 
 ```bash
-code --install-extension package/markflow-0.1.8.vsix
+code --install-extension package/markflow-0.1.12.vsix
 ```
 
 You can also install it from VS Code with:
