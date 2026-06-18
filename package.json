@@ -1,0 +1,86 @@
+{
+  "name": "markflow",
+  "displayName": "Markflow",
+  "description": "A portable rich Markdown editor for local files in VS Code.",
+  "version": "0.1.8",
+  "publisher": "ajose",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Formatters"
+  ],
+  "activationEvents": [
+    "onCustomEditor:ajose.markflow.markdownEditor",
+    "onCommand:markflow.openAsRichMarkdown"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "ajose.markflow.markdownEditor",
+        "displayName": "Markflow",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "markflow.openAsRichMarkdown",
+        "title": "Open as Rich Markdown"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "markflow.openAsRichMarkdown",
+          "when": "resourceLangId == markdown",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Markflow",
+      "properties": {
+        "markflow.defaultTheme": {
+          "type": "string",
+          "default": "dark",
+          "enum": [
+            "dark"
+          ],
+          "description": "Theme used by the rich Markdown editor."
+        },
+        "markflow.debounceMs": {
+          "type": "number",
+          "default": 250,
+          "minimum": 0,
+          "description": "Delay before sending editor changes back to VS Code."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:webview && npm run build:extension",
+    "build:extension": "tsc -p tsconfig.json",
+    "build:webview": "npm --prefix webview run build",
+    "watch": "concurrently \"tsc -watch -p tsconfig.json\" \"npm --prefix webview run dev\"",
+    "package": "node scripts/package-extension.mjs",
+    "check": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/vscode": "1.90.0",
+    "@vscode/vsce": "^3.9.2",
+    "concurrently": "^10.0.3",
+    "typescript": "^6.0.3"
+  }
+}

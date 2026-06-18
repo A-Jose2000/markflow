@@ -1,0 +1,7 @@
+node_modules/
+dist/
+webview/node_modules/
+webview/dist/
+package/*.vsix
+*.log
+*.tsbuildinfo

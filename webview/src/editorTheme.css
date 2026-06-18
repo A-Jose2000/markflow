@@ -1,0 +1,588 @@
+:root {
+  --app-bg: #0d1117;
+  --panel-bg: #111827;
+  --panel-border: #30363d;
+  --text-main: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-soft: #1f6feb;
+  --code-text: #ffb86c;
+  --code-bg: #161b22;
+  --success: #3fb950;
+  --danger: #f85149;
+  color: var(--text-main);
+  background: var(--app-bg);
+  color-scheme: dark;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--app-bg);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  background: var(--app-bg);
+}
+
+.app-shell--loading {
+  display: grid;
+  gap: 0.85rem;
+  place-items: center;
+  align-content: center;
+}
+
+.loading-line {
+  width: min(18rem, 55vw);
+  height: 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--panel-bg);
+}
+
+.loading-line::after {
+  display: block;
+  width: 42%;
+  height: 100%;
+  content: "";
+  background: var(--accent);
+  animation: loading-slide 1s ease-in-out infinite;
+}
+
+.loading-copy {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.app-topbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 2.65rem;
+  padding: 0.4rem 0.6rem;
+  background: #0b1018;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.document-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-switcher {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(3rem, auto));
+  flex: 0 0 auto;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  background: var(--app-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.mode-switcher button {
+  min-height: 1.8rem;
+  padding: 0 0.55rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 0.3rem;
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.mode-switcher button:hover:not(:disabled),
+.mode-switcher button[data-active="true"] {
+  color: #ffffff;
+  background: #1f2937;
+}
+
+.mode-switcher button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mode-switcher button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.editor-stage {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.fallback-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-main);
+  background: var(--app-bg);
+}
+
+.fallback-banner {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.75rem;
+  color: var(--text-muted);
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 0.82rem;
+}
+
+.fallback-banner strong {
+  color: var(--text-main);
+}
+
+.fallback-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.raw-markdown-editor {
+  width: min(100%, 58rem);
+  height: 100%;
+  min-height: 0;
+  padding: clamp(1.25rem, 3vw, 3rem) clamp(1rem, 5vw, 3.5rem) 5rem;
+  margin: 0 auto;
+  overflow: auto;
+  color: var(--text-main);
+  resize: none;
+  background: var(--app-bg);
+  border: 0;
+  outline: 0;
+  caret-color: var(--accent);
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 0.94rem;
+  line-height: 1.65;
+}
+
+.rich-editor-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@keyframes loading-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(240%);
+  }
+}
+
+.mdxeditor {
+  --baseBase: #0d1117;
+  --baseBg: #111827;
+  --baseBgActive: #1f2937;
+  --baseBorder: #30363d;
+  --baseBorderHover: #6b7280;
+  --basePageBg: #161b22;
+  --baseText: #c9d1d9;
+  --baseTextContrast: #e6edf3;
+  --accentBase: #58a6ff;
+  --accentBg: #1f6feb;
+  --accentText: #79c0ff;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-main);
+  background: var(--app-bg);
+}
+
+.markflow-rich-editor,
+.markflow-rich-editor .mdxeditor-diff-source-wrapper,
+.markflow-rich-editor .mdxeditor-rich-text-editor {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.markflow-rich-editor .mdxeditor-diff-source-wrapper {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.markflow-rich-editor .mdxeditor-rich-text-editor {
+  position: relative;
+}
+
+.markflow-rich-editor .mdxeditor-source-editor,
+.markflow-rich-editor .cm-editor,
+.markflow-rich-editor .cm-scroller {
+  min-height: 0;
+  height: 100%;
+}
+
+.mdxeditor-toolbar {
+  gap: 0.2rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.6rem;
+  overflow-x: auto;
+  color: var(--text-main) !important;
+  background: var(--panel-bg) !important;
+  border: 0;
+  border-bottom: 1px solid var(--panel-border);
+  border-radius: 0;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.mdxeditor-toolbar button,
+.mdxeditor-toolbar [role="button"],
+.mdxeditor-toolbar [data-toolbar-item],
+.mdxeditor-toolbar [data-radix-collection-item] {
+  min-width: 2rem;
+  min-height: 2rem;
+  color: var(--text-main) !important;
+  background: transparent !important;
+  border-radius: 0.35rem;
+}
+
+.mdxeditor-toolbar button *,
+.mdxeditor-toolbar [role="button"] *,
+.mdxeditor-toolbar [data-toolbar-item] *,
+.mdxeditor-toolbar [data-radix-collection-item] *,
+.mdxeditor-toolbar span,
+.mdxeditor-toolbar svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.mdxeditor-toolbar button:hover,
+.mdxeditor-toolbar [role="button"]:hover,
+.mdxeditor-toolbar [data-toolbar-item]:hover,
+.mdxeditor-toolbar [data-radix-collection-item]:hover,
+.mdxeditor-toolbar button[data-state="on"],
+.mdxeditor-toolbar [data-state="on"] {
+  color: #ffffff !important;
+  background: #1f2937 !important;
+}
+
+.mdxeditor-toolbar button:disabled,
+.mdxeditor-toolbar [aria-disabled="true"],
+.mdxeditor-toolbar [data-disabled] {
+  color: #6b7280 !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.mdxeditor-toolbar button:disabled *,
+.mdxeditor-toolbar [aria-disabled="true"] *,
+.mdxeditor-toolbar [data-disabled] * {
+  color: currentColor !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.mdxeditor-toolbar button:focus-visible,
+.mdxeditor-toolbar [role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mdxeditor-toolbar svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.mdxeditor-select-content,
+.mdxeditor-popup-container,
+.mdxeditor-popup-container [role="dialog"],
+.mdxeditor-popup-container [role="listbox"],
+[data-radix-popper-content-wrapper] [role="listbox"],
+[data-radix-popper-content-wrapper] [role="option"] {
+  color: var(--text-main) !important;
+  background: var(--panel-bg) !important;
+  border-color: var(--panel-border) !important;
+}
+
+[data-radix-popper-content-wrapper] [role="option"]:hover,
+[data-radix-popper-content-wrapper] [role="option"][data-highlighted] {
+  color: #ffffff !important;
+  background: #1f2937 !important;
+}
+
+.mdxeditor-root-contenteditable {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mdxeditor-root-contenteditable > div {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.markflow-editor {
+  width: min(100%, 58rem);
+  min-height: 100%;
+  margin: 0 auto;
+  overflow: visible;
+  padding: clamp(1.25rem, 3vw, 3rem) clamp(1rem, 5vw, 3.5rem) 5rem;
+  color: var(--text-main);
+  caret-color: var(--accent);
+  line-height: 1.7;
+}
+
+.raw-markdown-editor,
+.mdxeditor-toolbar,
+.mdxeditor-root-contenteditable > div,
+.markflow-rich-editor .cm-sourceView,
+.markflow-rich-editor .cm-scroller,
+.markflow-editor pre {
+  scrollbar-color: var(--panel-border) var(--app-bg);
+  scrollbar-width: thin;
+}
+
+.raw-markdown-editor::-webkit-scrollbar,
+.mdxeditor-toolbar::-webkit-scrollbar,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar,
+.markflow-editor pre::-webkit-scrollbar {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.raw-markdown-editor::-webkit-scrollbar-track,
+.mdxeditor-toolbar::-webkit-scrollbar-track,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar-track,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar-track,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar-track,
+.markflow-editor pre::-webkit-scrollbar-track {
+  background: var(--app-bg);
+}
+
+.raw-markdown-editor::-webkit-scrollbar-thumb,
+.mdxeditor-toolbar::-webkit-scrollbar-thumb,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar-thumb,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar-thumb,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar-thumb,
+.markflow-editor pre::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border: 2px solid var(--app-bg);
+  border-radius: 999px;
+}
+
+.raw-markdown-editor::-webkit-scrollbar-thumb:hover,
+.mdxeditor-toolbar::-webkit-scrollbar-thumb:hover,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar-thumb:hover,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar-thumb:hover,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar-thumb:hover,
+.markflow-editor pre::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+.markflow-editor:focus {
+  outline: none;
+}
+
+.markflow-editor h1,
+.markflow-editor h2,
+.markflow-editor h3,
+.markflow-editor h4,
+.markflow-editor h5,
+.markflow-editor h6 {
+  color: #f0f6fc;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.markflow-editor h1 {
+  margin-top: 0;
+  font-size: 2.25rem;
+}
+
+.markflow-editor h2 {
+  padding-bottom: 0.35rem;
+  margin-top: 2rem;
+  font-size: 1.65rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.markflow-editor h3 {
+  margin-top: 1.6rem;
+  font-size: 1.25rem;
+}
+
+.markflow-editor p,
+.markflow-editor li {
+  font-size: 1rem;
+}
+
+.markflow-editor a {
+  color: var(--accent);
+}
+
+.markflow-editor blockquote {
+  padding: 0.15rem 0 0.15rem 1rem;
+  margin-left: 0;
+  color: var(--text-muted);
+  border-left: 3px solid var(--accent-soft);
+}
+
+.markflow-editor code {
+  padding: 0.15rem 0.35rem;
+  color: var(--code-text);
+  background: var(--code-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.3rem;
+}
+
+.markflow-editor pre {
+  padding: 1rem;
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.markflow-editor pre code {
+  padding: 0;
+  color: var(--text-main);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.markflow-editor table {
+  width: 100%;
+  overflow: hidden;
+  border-collapse: collapse;
+  border: 1px solid var(--panel-border);
+}
+
+.markflow-editor th,
+.markflow-editor td {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--panel-border);
+}
+
+.markflow-editor th {
+  color: #ffffff;
+  background: #162032;
+}
+
+.markflow-editor hr {
+  border: 0;
+  border-top: 1px solid var(--panel-border);
+}
+
+.markflow-editor img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markflow-editor input[type="checkbox"] {
+  accent-color: var(--success);
+}
+
+.cm-editor,
+.cm-scroller,
+.cm-gutters {
+  color: var(--text-main);
+  background: var(--code-bg);
+}
+
+.cm-editor {
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.cm-gutters {
+  border-right-color: var(--panel-border);
+}
+
+.cm-activeLine,
+.cm-activeLineGutter {
+  background: #1f2937;
+}
+
+@media (max-width: 560px) {
+  .app-topbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .mode-switcher {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .markflow-editor {
+    padding: 1rem 0.9rem 4rem;
+  }
+}
