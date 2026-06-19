@@ -3,6 +3,11 @@ import "katex/dist/katex.min.css";
 import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { MDXEditorMethods } from "@mdxeditor/editor";
 import type { ExtensionToWebviewMessage } from "./markdownMessages";
+import { appendMarkflowRequestBlock } from "./markflowRequests/generate";
+import { deleteMarkflowRequest, parseMarkflowRequests, updateMarkflowRequestStatus } from "./markflowRequests/parser";
+import { createMarkflowRequestDirectiveDescriptor } from "./markflowRequests/RequestDirective";
+import { RequestPanel } from "./markflowRequests/RequestPanel";
+import type { MarkflowRequest } from "./markflowRequests/types";
 import { markflowMathPlugin } from "./mathPlugin";
 import { getVsCodeApi } from "./vscodeApi";
 
@@ -43,6 +48,13 @@ export function App(): JSX.Element {
   const [editorMode, setEditorMode] = useState<EditorMode>("rich");
   const [richEditorModule, setRichEditorModule] = useState<MdxEditorModule | undefined>();
   const [richEditorLoadError, setRichEditorLoadError] = useState<string | undefined>();
+  const [isRequestPanelOpen, setIsRequestPanelOpen] = useState(false);
+  const [resourcePath, setResourcePath] = useState<string | undefined>();
+
+  const openRequests = useMemo(
+    () => parseMarkflowRequests(markdown).filter((request) => request.status === "open"),
+    [markdown]
+  );
 
   const plugins = useMemo(
     () =>
@@ -76,6 +88,9 @@ export function App(): JSX.Element {
               }
             }),
             richEditorModule.frontmatterPlugin(),
+            richEditorModule.directivesPlugin({
+              directiveDescriptors: [createMarkflowRequestDirectiveDescriptor(richEditorModule)]
+            }),
             markflowMathPlugin(richEditorModule),
             richEditorModule.diffSourcePlugin({ viewMode: "rich-text" }),
             richEditorModule.markdownShortcutPlugin(),
@@ -129,6 +144,24 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isRequestPanelOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsRequestPanelOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isRequestPanelOpen]);
+
   const RichMarkdownEditor = richEditorModule?.MDXEditor;
 
   useEffect(() => {
@@ -142,6 +175,7 @@ export function App(): JSX.Element {
 
         isReadyRef.current = true;
         debounceMsRef.current = message.debounceMs;
+        setResourcePath(message.resourcePath);
         setReadonly(message.readonly);
         setEditorError(undefined);
         setMarkdown(message.markdown);
@@ -221,6 +255,56 @@ export function App(): JSX.Element {
     }, debounceMsRef.current);
   }
 
+  function applyLocalMarkdownChange(nextMarkdown: string): void {
+    if (readonly || nextMarkdown === markdown) {
+      return;
+    }
+
+    clearPendingEdit();
+    setEditorError(undefined);
+    setMarkdown(nextMarkdown);
+    editorRef.current?.setMarkdown(nextMarkdown);
+    vscode.postMessage({
+      type: "edit",
+      markdown: nextMarkdown
+    });
+  }
+
+  function handleInsertRequest(): void {
+    applyLocalMarkdownChange(appendMarkflowRequestBlock(markdown));
+  }
+
+  function handleCloseRequest(requestId: string): void {
+    applyLocalMarkdownChange(updateMarkflowRequestStatus(markdown, requestId, "closed"));
+  }
+
+  function handleDeleteRequest(requestId: string): void {
+    applyLocalMarkdownChange(deleteMarkflowRequest(markdown, requestId));
+  }
+
+  function handleCopyRequestReference(request: MarkflowRequest): void {
+    const requestSource =
+      request.startIndex !== undefined && request.endIndex !== undefined
+        ? markdown.slice(request.startIndex, request.endIndex)
+        : request.body;
+    const referenceLines = ["Markflow request reference"];
+
+    if (resourcePath) {
+      referenceLines.push(`File: ${resourcePath}`);
+    }
+
+    if (request.startIndex !== undefined) {
+      referenceLines.push(`Line: ${getLineNumber(markdown, request.startIndex)}`);
+    }
+
+    referenceLines.push(`ID: ${request.id || "missing-id"}`, "", requestSource);
+
+    vscode.postMessage({
+      type: "copyText",
+      text: referenceLines.join("\n")
+    });
+  }
+
   function handleEditorError(payload: { error: string; source: string }): void {
     console.error("Markflow could not parse Markdown for the rich editor.", payload);
     setEditorError(payload.error);
@@ -254,26 +338,45 @@ export function App(): JSX.Element {
       }}
     >
       <header className="app-topbar">
-        <div className="mode-switcher" role="group" aria-label="Editor mode">
-          <button
-            data-active={editorMode === "raw"}
-            onClick={() => setEditorMode("raw")}
-            title="Raw Markdown"
-            type="button"
-          >
-            Raw
+        <div className="topbar-actions">
+          <div className="mode-switcher" role="group" aria-label="Editor mode">
+            <button
+              data-active={editorMode === "raw"}
+              onClick={() => setEditorMode("raw")}
+              title="Raw Markdown"
+              type="button"
+            >
+              Raw
+            </button>
+            <button
+              data-active={editorMode === "rich"}
+              disabled={!RichMarkdownEditor || Boolean(richEditorLoadError)}
+              onClick={() => {
+                setEditorError(undefined);
+                setEditorMode("rich");
+              }}
+              title={richEditorLoadError ?? "Rich Markdown"}
+              type="button"
+            >
+              Rich
+            </button>
+          </div>
+
+          <button className="request-insert-button" disabled={readonly} onClick={handleInsertRequest} type="button">
+            <span aria-hidden="true">🤖</span>
+            Request
           </button>
+
           <button
-            data-active={editorMode === "rich"}
-            disabled={!RichMarkdownEditor || Boolean(richEditorLoadError)}
-            onClick={() => {
-              setEditorError(undefined);
-              setEditorMode("rich");
-            }}
-            title={richEditorLoadError ?? "Rich Markdown"}
+            aria-controls="markflow-open-requests"
+            aria-expanded={isRequestPanelOpen}
+            className="request-panel-toggle"
+            data-active={isRequestPanelOpen}
+            onClick={() => setIsRequestPanelOpen((current) => !current)}
             type="button"
           >
-            Rich
+            Open Requests
+            <span>{openRequests.length}</span>
           </button>
         </div>
 
@@ -315,6 +418,29 @@ export function App(): JSX.Element {
           </section>
         )}
       </section>
+      {isRequestPanelOpen ? (
+        <RequestPanel
+          id="markflow-open-requests"
+          openRequests={openRequests}
+          readonly={readonly}
+          onCloseRequest={handleCloseRequest}
+          onCopyRequestReference={handleCopyRequestReference}
+          onDeleteRequest={handleDeleteRequest}
+          onDismiss={() => setIsRequestPanelOpen(false)}
+        />
+      ) : null}
     </main>
   );
+}
+
+function getLineNumber(source: string, index: number): number {
+  let lineNumber = 1;
+
+  for (let currentIndex = 0; currentIndex < index; currentIndex += 1) {
+    if (source[currentIndex] === "\n") {
+      lineNumber += 1;
+    }
+  }
+
+  return lineNumber;
 }

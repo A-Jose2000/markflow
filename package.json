@@ -2,7 +2,7 @@
   "name": "markflow",
   "displayName": "Markflow",
   "description": "A portable rich Markdown editor for local files in VS Code.",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "publisher": "ajose",
   "license": "MIT",
   "engines": {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.13
+
+- Changed Markflow Request creation and follow-ups so they no longer insert empty Assistant placeholders.
+- Added mini-chat styling for request messages and lighter message bubbles.
+- Added request deletion and copy-reference actions.
+
 ## 0.1.12
 
 - Moved wide-table horizontal scrolling inside each table so the full Rich view does not pan sideways.

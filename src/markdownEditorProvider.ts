@@ -12,6 +12,10 @@ type WebviewToExtensionMessage =
       markdown: string;
     }
   | {
+      type: "copyText";
+      text: string;
+    }
+  | {
       type: "requestOpenSource";
     };
 
@@ -19,6 +23,7 @@ type ExtensionToWebviewMessage =
   | {
       type: "init";
       markdown: string;
+      resourcePath: string;
       readonly: boolean;
       debounceMs: number;
     }
@@ -52,6 +57,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
       postMessage({
         type: "init",
         markdown: document.getText(),
+        resourcePath: document.uri.fsPath,
         readonly: false,
         debounceMs: getDebounceMs()
       });
@@ -97,6 +103,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
               isApplyingWebviewEdit = false;
             }
           });
+          return;
+
+        case "copyText":
+          if (typeof message.text !== "string") {
+            return;
+          }
+
+          await vscode.env.clipboard.writeText(message.text);
           return;
 
         case "requestOpenSource":

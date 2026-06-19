@@ -2,6 +2,7 @@ export type ExtensionToWebviewMessage =
   | {
       type: "init";
       markdown: string;
+      resourcePath: string;
       readonly: boolean;
       debounceMs: number;
     }
@@ -17,6 +18,10 @@ export type WebviewToExtensionMessage =
   | {
       type: "edit";
       markdown: string;
+    }
+  | {
+      type: "copyText";
+      text: string;
     }
   | {
       type: "requestOpenSource";
