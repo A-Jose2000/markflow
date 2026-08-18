@@ -9,6 +9,9 @@ webview/package-lock.json
 webview/package.json
 webview/tsconfig.json
 webview/vite.config.ts
+webview/vite.desktop.config.ts
+desktop/**
+mobile/**
 scripts/**
 package/**
 testing/**

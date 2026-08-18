@@ -28,7 +28,7 @@ npm run package
 Then install the generated VSIX:
 
 ```bash
-code --install-extension package/markflow-0.1.12.vsix
+code --install-extension package/markflow-0.1.13.vsix
 ```
 
 You can also install it from VS Code with:
@@ -60,6 +60,38 @@ npm install
 npm --prefix webview install
 npm run build
 npm run package
+```
+
+## Windows Desktop App
+
+The Windows app uses the same rich editor as the VS Code extension and adds a native folder explorer. It shows folders plus supported Markdown, image, audio, video, and PDF files. Markdown opens in the editor with automatic saving; media opens in an in-app preview.
+
+Install the desktop dependencies and run it locally:
+
+```bash
+npm install
+npm --prefix webview install
+npm --prefix desktop install
+npm run desktop
+```
+
+Build both an x64 NSIS installer and a portable `.exe` from Windows:
+
+```bash
+npm run package:windows
+```
+
+The Windows artifacts are written to `desktop/release/`. Unsigned local builds may trigger a Microsoft SmartScreen warning.
+
+## Android Reader
+
+The Android React Native reader lives in `mobile/`. It opens Markdown from the Android document picker or from raw/GitHub Markdown links, and its EAS `preview` profile builds an installable APK.
+The APK build uses EAS Build, so you will need to be logged in to Expo.
+
+```bash
+cd mobile
+pnpm install
+pnpm build:apk
 ```
 
 ## Development

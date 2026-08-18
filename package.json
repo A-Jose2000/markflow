@@ -14,7 +14,8 @@
   ],
   "activationEvents": [
     "onCustomEditor:ajose.markflow.markdownEditor",
-    "onCommand:markflow.openAsRichMarkdown"
+    "onCommand:markflow.openAsRichMarkdown",
+    "onCommand:markflow.addSelectionToCodexThread"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -37,6 +38,11 @@
       {
         "command": "markflow.openAsRichMarkdown",
         "title": "Open as Rich Markdown"
+      },
+      {
+        "command": "markflow.addSelectionToCodexThread",
+        "title": "Add Selection to Codex Thread",
+        "category": "Markflow"
       }
     ],
     "menus": {
@@ -45,6 +51,13 @@
           "command": "markflow.openAsRichMarkdown",
           "when": "resourceLangId == markdown",
           "group": "navigation"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "markflow.addSelectionToCodexThread",
+          "when": "webviewId == 'ajose.markflow.markdownEditor' && markflowHasSelection",
+          "group": "codex"
         }
       ]
     },
@@ -72,9 +85,13 @@
     "build": "npm run build:webview && npm run build:extension",
     "build:extension": "tsc -p tsconfig.json",
     "build:webview": "npm --prefix webview run build",
+    "build:desktop": "npm --prefix webview run build:desktop",
+    "desktop": "npm --prefix desktop start",
+    "package:windows": "npm --prefix desktop run package:win",
+    "typecheck:webview": "npm --prefix webview run typecheck",
     "watch": "concurrently \"tsc -watch -p tsconfig.json\" \"npm --prefix webview run dev\"",
     "package": "node scripts/package-extension.mjs",
-    "check": "npm run build"
+    "check": "npm run typecheck:webview && npm run build && npm run build:desktop && npm --prefix desktop run check"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

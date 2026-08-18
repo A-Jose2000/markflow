@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { MarkdownEditorProvider, VIEW_TYPE } from "./markdownEditorProvider";
 
 const COMMAND_OPEN_AS_RICH_MARKDOWN = "markflow.openAsRichMarkdown";
+const COMMAND_ADD_SELECTION_TO_CODEX_THREAD = "markflow.addSelectionToCodexThread";
 
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new MarkdownEditorProvider(context);
@@ -25,6 +26,12 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       await vscode.commands.executeCommand("vscode.openWith", editor.document.uri, VIEW_TYPE);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(COMMAND_ADD_SELECTION_TO_CODEX_THREAD, async () => {
+      await provider.addSelectionToCodexThread();
     })
   );
 }
