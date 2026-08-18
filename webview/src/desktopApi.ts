@@ -35,6 +35,22 @@ export interface DesktopPathRequest {
   readonly relativePath: string;
 }
 
+export interface DesktopCreateEntryRequest {
+  readonly rootId: string;
+  readonly parentRelativePath: string;
+  readonly name: string;
+}
+
+export interface DesktopDroppedFilesRequest {
+  readonly rootId: string;
+  readonly parentRelativePath: string;
+}
+
+export interface DesktopImportResult {
+  readonly imported: DesktopFileEntry[];
+  readonly rejected: string[];
+}
+
 export interface DesktopMarkdownDocument {
   readonly rootId: string;
   readonly relativePath: string;
@@ -92,6 +108,9 @@ export type DesktopCloseResult =
 export interface MarkflowDesktopApi {
   chooseFolder(): Promise<DesktopFolderRoot | null>;
   listDirectory(request: DesktopPathRequest): Promise<DesktopFolderEntry[]>;
+  createMarkdownFile(request: DesktopCreateEntryRequest): Promise<DesktopFileEntry>;
+  createFolder(request: DesktopCreateEntryRequest): Promise<DesktopDirectoryEntry>;
+  importDroppedFiles(request: DesktopDroppedFilesRequest, files: File[]): Promise<DesktopImportResult>;
   openMarkdown(request: DesktopPathRequest): Promise<DesktopMarkdownDocument>;
   openMedia(request: DesktopPathRequest): Promise<DesktopMediaDocument>;
   autosaveCurrentMarkdown(request: DesktopAutosaveRequest): Promise<DesktopSaveResult>;
@@ -116,6 +135,9 @@ export function getDesktopApi(): MarkflowDesktopApi | undefined {
     !api ||
     typeof api.chooseFolder !== "function" ||
     typeof api.listDirectory !== "function" ||
+    typeof api.createMarkdownFile !== "function" ||
+    typeof api.createFolder !== "function" ||
+    typeof api.importDroppedFiles !== "function" ||
     typeof api.openMarkdown !== "function" ||
     typeof api.openMedia !== "function" ||
     typeof api.autosaveCurrentMarkdown !== "function" ||

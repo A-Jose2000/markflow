@@ -1,4 +1,11 @@
-import { useCallback, useRef, useState, type JSX } from "react";
+import {
+  useCallback,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type FormEvent,
+  type JSX
+} from "react";
 import {
   getDesktopApi,
   type DesktopFileTarget,
@@ -8,6 +15,7 @@ import {
 } from "./desktopApi";
 
 type DirectoryLoadStatus = "idle" | "loading" | "loaded" | "error";
+type CreateMode = "file" | "folder";
 
 interface DirectoryState {
   readonly expanded: boolean;
@@ -20,6 +28,7 @@ export interface DesktopSidebarProps {
   readonly api?: MarkflowDesktopApi;
   readonly activeTarget?: Pick<DesktopFileTarget, "rootId" | "relativePath">;
   readonly onBeforeChooseFolder?: () => void | Promise<void>;
+  readonly onBeforeCreate?: () => void | Promise<void>;
   readonly onFolderChanged?: (root: DesktopFolderRoot) => void;
   readonly onOpenMarkdown: (target: DesktopFileTarget) => void | Promise<void>;
   readonly onOpenMedia: (target: DesktopFileTarget) => void | Promise<void>;
@@ -30,6 +39,7 @@ export function DesktopSidebar({
   api: providedApi,
   activeTarget,
   onBeforeChooseFolder,
+  onBeforeCreate,
   onFolderChanged,
   onOpenMarkdown,
   onOpenMedia,
@@ -40,7 +50,14 @@ export function DesktopSidebar({
   const [root, setRoot] = useState<DesktopFolderRoot | undefined>();
   const [directories, setDirectories] = useState<Record<string, DirectoryState>>({});
   const [isChoosingFolder, setIsChoosingFolder] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [openingPath, setOpeningPath] = useState<string | undefined>();
+  const [selectedDirectoryPath, setSelectedDirectoryPath] = useState("");
+  const [createMode, setCreateMode] = useState<CreateMode | undefined>();
+  const [createName, setCreateName] = useState("");
+  const [dropTargetPath, setDropTargetPath] = useState<string | undefined>();
+  const [operationStatus, setOperationStatus] = useState<string | undefined>();
   const [sidebarError, setSidebarError] = useState<string | undefined>();
 
   const reportError = useCallback(
@@ -105,7 +122,7 @@ export function DesktopSidebar({
   );
 
   async function handleChooseFolder(): Promise<void> {
-    if (!api || isChoosingFolder || openingPath) {
+    if (!api || isChoosingFolder || openingPath || isCreating || isImporting) {
       return;
     }
 
@@ -122,6 +139,10 @@ export function DesktopSidebar({
 
       activeRootIdRef.current = selectedRoot.id;
       setRoot(selectedRoot);
+      setSelectedDirectoryPath("");
+      setCreateMode(undefined);
+      setCreateName("");
+      setOperationStatus(undefined);
       setDirectories({
         "": {
           expanded: true,
@@ -143,6 +164,9 @@ export function DesktopSidebar({
       return;
     }
 
+    setSelectedDirectoryPath(entry.relativePath);
+    setCreateMode(undefined);
+    setCreateName("");
     const state = directories[entry.relativePath];
 
     if (state?.expanded) {
@@ -171,7 +195,7 @@ export function DesktopSidebar({
   }
 
   async function handleOpenFile(entry: Exclude<DesktopFolderEntry, { kind: "directory" }>): Promise<void> {
-    if (!root || openingPath) {
+    if (!root || openingPath || isCreating || isImporting) {
       return;
     }
 
@@ -211,7 +235,149 @@ export function DesktopSidebar({
         entries: []
       }
     });
+    setSelectedDirectoryPath("");
+    setCreateMode(undefined);
+    setCreateName("");
+    setOperationStatus(undefined);
     void loadDirectory(root.id, "");
+  }
+
+  function startCreate(mode: CreateMode): void {
+    if (!root || isCreating || isImporting || isChoosingFolder || openingPath) {
+      return;
+    }
+
+    setCreateMode(mode);
+    setCreateName("");
+    setSidebarError(undefined);
+    setOperationStatus(undefined);
+  }
+
+  function cancelCreate(): void {
+    if (isCreating) {
+      return;
+    }
+
+    setCreateMode(undefined);
+    setCreateName("");
+  }
+
+  async function handleCreateSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    if (!api || !root || !createMode || isCreating || createName.trim().length === 0) {
+      return;
+    }
+
+    const rootId = root.id;
+    const parentRelativePath = selectedDirectoryPath;
+    setIsCreating(true);
+    setSidebarError(undefined);
+    setOperationStatus(undefined);
+
+    try {
+      await onBeforeCreate?.();
+
+      if (createMode === "file") {
+        const entry = await api.createMarkdownFile({
+          rootId,
+          parentRelativePath,
+          name: createName
+        });
+        await loadDirectory(rootId, parentRelativePath);
+        setCreateMode(undefined);
+        setCreateName("");
+        setOperationStatus(`Created ${entry.name}`);
+        await onOpenMarkdown({ rootId, ...entry });
+      } else {
+        const entry = await api.createFolder({
+          rootId,
+          parentRelativePath,
+          name: createName
+        });
+        await loadDirectory(rootId, parentRelativePath);
+        setDirectories((current) => ({
+          ...current,
+          [entry.relativePath]: {
+            expanded: true,
+            status: "loaded",
+            entries: []
+          }
+        }));
+        setSelectedDirectoryPath(entry.relativePath);
+        setCreateMode(undefined);
+        setCreateName("");
+        setOperationStatus(`Created folder ${entry.name}`);
+      }
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  function canAcceptFileDrop(event: ReactDragEvent<HTMLElement>): boolean {
+    return Boolean(root && !isCreating && !isImporting && Array.from(event.dataTransfer.types).includes("Files"));
+  }
+
+  function handleFileDragOver(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
+    if (!canAcceptFileDrop(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setDropTargetPath(relativePath);
+  }
+
+  function handleFileDragLeave(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
+    const nextTarget = event.relatedTarget;
+
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+
+    setDropTargetPath((current) => (current === relativePath ? undefined : current));
+  }
+
+  async function handleFileDrop(event: ReactDragEvent<HTMLElement>, relativePath: string): Promise<void> {
+    if (!api || !root || !canAcceptFileDrop(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const files = Array.from(event.dataTransfer.files);
+
+    if (files.length === 0) {
+      setDropTargetPath(undefined);
+      return;
+    }
+
+    const rootId = root.id;
+    setDropTargetPath(undefined);
+    setIsImporting(true);
+    setSidebarError(undefined);
+    setOperationStatus(`Importing ${files.length} ${files.length === 1 ? "file" : "files"}…`);
+
+    try {
+      const result = await api.importDroppedFiles({ rootId, parentRelativePath: relativePath }, files);
+      await loadDirectory(rootId, relativePath);
+      setSelectedDirectoryPath(relativePath);
+      setOperationStatus(
+        `Imported ${result.imported.length} ${result.imported.length === 1 ? "file" : "files"}`
+      );
+
+      if (result.rejected.length > 0) {
+        setSidebarError(`Skipped unsupported items: ${result.rejected.join(", ")}`);
+      }
+    } catch (error) {
+      setOperationStatus(undefined);
+      reportError(error);
+    } finally {
+      setIsImporting(false);
+    }
   }
 
   function renderDirectory(relativePath: string, level: number): JSX.Element | null {
@@ -232,13 +398,19 @@ export function DesktopSidebar({
               <li
                 aria-expanded={isExpanded}
                 aria-level={level}
-                className="desktop-sidebar__tree-item desktop-sidebar__tree-item--directory"
+                className={`desktop-sidebar__tree-item desktop-sidebar__tree-item--directory${
+                  dropTargetPath === entry.relativePath ? " desktop-sidebar__tree-item--drop-target" : ""
+                }`}
                 key={entry.relativePath}
+                onDragLeave={(event) => handleFileDragLeave(event, entry.relativePath)}
+                onDragOver={(event) => handleFileDragOver(event, entry.relativePath)}
+                onDrop={(event) => void handleFileDrop(event, entry.relativePath)}
                 role="treeitem"
               >
                 <button
                   aria-label={`${isExpanded ? "Collapse" : "Expand"} folder ${entry.name}`}
                   className="desktop-sidebar__entry-button"
+                  data-selected={selectedDirectoryPath === entry.relativePath}
                   onClick={() => handleToggleDirectory(entry)}
                   type="button"
                 >
@@ -287,7 +459,7 @@ export function DesktopSidebar({
                 aria-busy={isOpening}
                 aria-current={isActive ? "page" : undefined}
                 className="desktop-sidebar__entry-button"
-                disabled={isChoosingFolder || Boolean(openingPath)}
+                disabled={isChoosingFolder || isCreating || isImporting || Boolean(openingPath)}
                 onClick={() => void handleOpenFile(entry)}
                 title={entry.relativePath}
                 type="button"
@@ -313,19 +485,34 @@ export function DesktopSidebar({
   }
 
   const rootDirectory = directories[""];
+  const isBusy = isChoosingFolder || isCreating || isImporting || Boolean(openingPath);
+  const selectedDirectoryLabel = selectedDirectoryPath || root?.name || "selected folder";
 
   return (
     <aside aria-label="Folder explorer" className="desktop-sidebar">
       <header className="desktop-sidebar__header">
         <div className="desktop-sidebar__title-block">
           <strong>Explorer</strong>
-          {root ? <span title={root.displayPath}>{root.name}</span> : null}
+          {root ? (
+            <button
+              className="desktop-sidebar__root-button"
+              data-selected={selectedDirectoryPath === ""}
+              onClick={() => {
+                setSelectedDirectoryPath("");
+                cancelCreate();
+              }}
+              title={`${root.displayPath} · Select as create/drop target`}
+              type="button"
+            >
+              {root.name}
+            </button>
+          ) : null}
         </div>
         <div className="desktop-sidebar__actions">
           <button
             aria-busy={isChoosingFolder}
             className="desktop-sidebar__choose-button"
-            disabled={isChoosingFolder || Boolean(openingPath)}
+            disabled={isBusy}
             onClick={() => void handleChooseFolder()}
             type="button"
           >
@@ -335,7 +522,7 @@ export function DesktopSidebar({
             <button
               aria-label={`Refresh ${root.name}`}
               className="desktop-sidebar__refresh-button"
-              disabled={isChoosingFolder || Boolean(openingPath) || rootDirectory?.status === "loading"}
+              disabled={isBusy || rootDirectory?.status === "loading"}
               onClick={handleRefreshRoot}
               title="Refresh folder"
               type="button"
@@ -344,11 +531,59 @@ export function DesktopSidebar({
             </button>
           ) : null}
         </div>
+        {root ? (
+          <div className="desktop-sidebar__create-actions" role="group" aria-label="Create explorer item">
+            <button disabled={isBusy} onClick={() => startCreate("file")} title="New Markdown file" type="button">
+              + File
+            </button>
+            <button disabled={isBusy} onClick={() => startCreate("folder")} title="New folder" type="button">
+              + Folder
+            </button>
+          </div>
+        ) : null}
       </header>
+
+      {root && createMode ? (
+        <form className="desktop-sidebar__create-form" onSubmit={(event) => void handleCreateSubmit(event)}>
+          <label htmlFor="desktop-sidebar-create-name">
+            <strong>{createMode === "file" ? "New Markdown file" : "New folder"}</strong>
+            <span title={selectedDirectoryPath}>in {selectedDirectoryLabel}</span>
+          </label>
+          <input
+            id="desktop-sidebar-create-name"
+            autoFocus
+            disabled={isCreating}
+            onChange={(event) => setCreateName(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelCreate();
+              }
+            }}
+            placeholder={createMode === "file" ? "notes.md" : "Folder name"}
+            spellCheck={false}
+            value={createName}
+          />
+          <div>
+            <button disabled={isCreating || createName.trim().length === 0} type="submit">
+              {isCreating ? "Creating…" : "Create"}
+            </button>
+            <button disabled={isCreating} onClick={cancelCreate} type="button">
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       {sidebarError ? (
         <div className="desktop-sidebar__error" role="alert">
           {sidebarError}
+        </div>
+      ) : null}
+
+      {operationStatus ? (
+        <div className="desktop-sidebar__operation-status" role="status">
+          {operationStatus}
         </div>
       ) : null}
 
@@ -357,7 +592,14 @@ export function DesktopSidebar({
           <p>Select a folder to browse Markdown and media files.</p>
         </div>
       ) : (
-        <nav aria-busy={rootDirectory?.status === "loading"} aria-label={`${root.name} contents`}>
+        <nav
+          aria-busy={rootDirectory?.status === "loading" || isImporting}
+          aria-label={`${root.name} contents`}
+          className={dropTargetPath === "" ? "desktop-sidebar__root-drop-target" : undefined}
+          onDragLeave={(event) => handleFileDragLeave(event, "")}
+          onDragOver={(event) => handleFileDragOver(event, "")}
+          onDrop={(event) => void handleFileDrop(event, "")}
+        >
           {rootDirectory?.status === "loading" && rootDirectory.entries.length === 0 ? (
             <p className="desktop-sidebar__status" role="status">
               Loading folder…

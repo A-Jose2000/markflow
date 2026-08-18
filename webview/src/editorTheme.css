@@ -132,12 +132,25 @@ select {
   text-transform: uppercase;
 }
 
-.desktop-sidebar__title-block span {
+.desktop-sidebar__root-button {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
   overflow: hidden;
   color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
   font-size: 0.76rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.desktop-sidebar__root-button:hover,
+.desktop-sidebar__root-button[data-selected="true"] {
+  color: #ffffff;
 }
 
 .desktop-sidebar__actions {
@@ -148,6 +161,8 @@ select {
 
 .desktop-sidebar__choose-button,
 .desktop-sidebar__refresh-button,
+.desktop-sidebar__create-actions button,
+.desktop-sidebar__create-form button,
 .desktop-sidebar__inline-error button {
   min-height: 2rem;
   color: var(--text-main);
@@ -176,10 +191,73 @@ select {
 
 .desktop-sidebar__choose-button:hover:not(:disabled),
 .desktop-sidebar__refresh-button:hover:not(:disabled),
+.desktop-sidebar__create-actions button:hover:not(:disabled),
+.desktop-sidebar__create-form button:hover:not(:disabled),
 .desktop-sidebar__inline-error button:hover:not(:disabled) {
   color: #ffffff;
   background: #3a3a3a;
   border-color: #686868;
+}
+
+.desktop-sidebar__create-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.desktop-sidebar__create-actions button {
+  padding: 0 0.45rem;
+}
+
+.desktop-sidebar__create-form {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  background: #242424;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.desktop-sidebar__create-form label {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+  font-size: 0.74rem;
+}
+
+.desktop-sidebar__create-form label span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-sidebar__create-form input {
+  width: 100%;
+  min-width: 0;
+  height: 2rem;
+  padding: 0 0.5rem;
+  color: var(--text-main);
+  background: #191919;
+  border: 1px solid #555555;
+  border-radius: 0.35rem;
+  outline: 0;
+  font-size: 0.76rem;
+}
+
+.desktop-sidebar__create-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.desktop-sidebar__create-form > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.desktop-sidebar__create-form button {
+  min-height: 1.8rem;
 }
 
 .desktop-sidebar button:disabled {
@@ -198,6 +276,10 @@ select {
   overflow: auto;
   scrollbar-color: #555555 #202020;
   scrollbar-width: thin;
+}
+
+.desktop-sidebar__root-drop-target {
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .desktop-sidebar__tree-group {
@@ -237,9 +319,21 @@ select {
 }
 
 .desktop-sidebar__entry-button:hover,
+.desktop-sidebar__entry-button[data-selected="true"],
 .desktop-sidebar__tree-item[aria-selected="true"] > .desktop-sidebar__entry-button {
   color: #ffffff;
   background: #343434;
+}
+
+.desktop-sidebar__entry-button[data-selected="true"] {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.desktop-sidebar__tree-item--drop-target > .desktop-sidebar__entry-button {
+  color: #ffffff;
+  background: #343434;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .desktop-sidebar__tree-item[aria-selected="true"] > .desktop-sidebar__entry-button {
@@ -306,6 +400,12 @@ select {
   padding: 0.55rem 0.7rem;
   margin: 0.6rem 0.6rem 0;
   border-radius: 0.4rem;
+}
+
+.desktop-sidebar__operation-status {
+  padding: 0.45rem 0.7rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
 }
 
 .desktop-sidebar__inline-error {

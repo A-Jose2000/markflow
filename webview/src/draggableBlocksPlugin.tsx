@@ -319,7 +319,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
   }, [editor, requestMeasureHandles, rootElement]);
 
   const closeCommandMenu = useCallback(
-    (options: { insertSpace?: boolean; restoreFocus?: boolean } = {}) => {
+    (options: { insertSpace?: boolean; removeSlash?: boolean; restoreFocus?: boolean } = {}) => {
       const menu = commandMenu;
       commandMenuRef.current = undefined;
 
@@ -331,12 +331,25 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
       setCommandQuery("");
       setActiveCommandIndex(0);
 
-      if (!menu || (!options.insertSpace && !options.restoreFocus)) {
+      if (!menu || (!options.insertSpace && !options.removeSlash && !options.restoreFocus)) {
         return;
       }
 
       editor.update(
         () => {
+          if (options.removeSlash && menu.slashMarker) {
+            const textNode = $getNodeByKey(menu.slashMarker.textNodeKey);
+
+            if (
+              $isTextNode(textNode) &&
+              textNode.getTextContent()[menu.slashMarker.offset] === "/"
+            ) {
+              textNode.spliceText(menu.slashMarker.offset, 1, "");
+              textNode.select(menu.slashMarker.offset, menu.slashMarker.offset);
+              return;
+            }
+          }
+
           if (options.insertSpace && menu.slashMarker) {
             const textNode = $getNodeByKey(menu.slashMarker.textNodeKey);
 
@@ -662,6 +675,16 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
         return;
       }
 
+      if (
+        (event.key === "Backspace" || event.key === "Delete") &&
+        commandMenu?.source === "slash" &&
+        commandQuery.length === 0
+      ) {
+        event.preventDefault();
+        closeCommandMenu({ removeSlash: true });
+        return;
+      }
+
       if (event.key === " " && commandMenu?.source === "slash" && commandQuery.length === 0) {
         event.preventDefault();
         closeCommandMenu({ insertSpace: true });
@@ -851,7 +874,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
             )}
           </div>
           {commandMenu.source === "slash" && commandQuery.length === 0 ? (
-            <p className="markflow-block-command-hint">Press Space to close</p>
+            <p className="markflow-block-command-hint">Space closes · Backspace/Delete removes /</p>
           ) : null}
         </section>,
         document.body

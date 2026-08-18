@@ -749,6 +749,7 @@ export function App(): JSX.Element {
           activeTarget={desktopActiveTarget}
           api={desktopApi}
           onBeforeChooseFolder={flushDesktopChanges}
+          onBeforeCreate={flushDesktopChanges}
           onError={(error) => setDesktopError(error.message)}
           onFolderChanged={handleDesktopFolderChanged}
           onOpenMarkdown={handleOpenDesktopMarkdown}

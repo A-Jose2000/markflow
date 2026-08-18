@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
-const { promises: fs } = require("node:fs");
+const { constants: fsConstants, promises: fs } = require("node:fs");
 const { pathToFileURL } = require("node:url");
 const {
   app,
@@ -57,6 +57,9 @@ const BUNDLED_CONTENT_TYPES = new Map([
 const CHANNELS = Object.freeze({
   chooseFolder: "markflow-desktop:choose-folder",
   listDirectory: "markflow-desktop:list-directory",
+  createMarkdownFile: "markflow-desktop:create-markdown-file",
+  createFolder: "markflow-desktop:create-folder",
+  importDroppedFiles: "markflow-desktop:import-dropped-files",
   openMarkdown: "markflow-desktop:open-markdown",
   openMedia: "markflow-desktop:open-media",
   autosaveCurrentMarkdown: "markflow-desktop:autosave-current-markdown",
@@ -247,6 +250,9 @@ function attachWebContentsGuards(window) {
 function registerIpcHandlers() {
   registerIpcHandler(CHANNELS.chooseFolder, chooseFolder);
   registerIpcHandler(CHANNELS.listDirectory, listDirectory);
+  registerIpcHandler(CHANNELS.createMarkdownFile, createMarkdownFile);
+  registerIpcHandler(CHANNELS.createFolder, createFolder);
+  registerIpcHandler(CHANNELS.importDroppedFiles, importDroppedFiles);
   registerIpcHandler(CHANNELS.openMarkdown, openMarkdown);
   registerIpcHandler(CHANNELS.openMedia, openMedia);
   registerIpcHandler(CHANNELS.autosaveCurrentMarkdown, autosaveCurrentMarkdown);
@@ -497,6 +503,153 @@ async function listDirectory(event, payload) {
   });
 
   return visibleEntries;
+}
+
+async function createMarkdownFile(event, payload) {
+  const request = readCreateEntryRequest(payload);
+  const root = getOwnedRoot(event.sender.id, request.rootId);
+  const parentPath = await resolveExistingPath(root, request.parentRelativePath);
+  const parentStats = await fs.stat(parentPath);
+
+  if (!parentStats.isDirectory()) {
+    throw new PublicError("NOT_A_DIRECTORY", "Choose a folder before creating a Markdown file.");
+  }
+
+  const name = normalizeNewMarkdownName(request.name);
+  const relativePath = joinApiPath(request.parentRelativePath, name);
+  const candidatePath = path.resolve(parentPath, name);
+  assertContained(root.realPath, candidatePath);
+
+  try {
+    await fs.writeFile(candidatePath, "", { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (hasFileSystemErrorCode(error, "EEXIST")) {
+      throw new PublicError("ALREADY_EXISTS", "A file or folder with that name already exists.");
+    }
+
+    throw error;
+  }
+
+  const realPath = await fs.realpath(candidatePath);
+  assertContained(root.realPath, realPath);
+
+  return {
+    kind: "markdown",
+    name,
+    relativePath,
+    mimeType: FILE_TYPES.get(".md").mimeType
+  };
+}
+
+async function createFolder(event, payload) {
+  const request = readCreateEntryRequest(payload);
+  const root = getOwnedRoot(event.sender.id, request.rootId);
+  const parentPath = await resolveExistingPath(root, request.parentRelativePath);
+  const parentStats = await fs.stat(parentPath);
+
+  if (!parentStats.isDirectory()) {
+    throw new PublicError("NOT_A_DIRECTORY", "Choose a folder before creating another folder.");
+  }
+
+  const name = normalizeNewEntryName(request.name);
+  const relativePath = joinApiPath(request.parentRelativePath, name);
+  const candidatePath = path.resolve(parentPath, name);
+  assertContained(root.realPath, candidatePath);
+
+  try {
+    await fs.mkdir(candidatePath);
+  } catch (error) {
+    if (hasFileSystemErrorCode(error, "EEXIST")) {
+      throw new PublicError("ALREADY_EXISTS", "A file or folder with that name already exists.");
+    }
+
+    throw error;
+  }
+
+  const realPath = await fs.realpath(candidatePath);
+  assertContained(root.realPath, realPath);
+
+  return {
+    kind: "directory",
+    name,
+    relativePath
+  };
+}
+
+async function importDroppedFiles(event, payload) {
+  const request = readImportFilesRequest(payload);
+  const root = getOwnedRoot(event.sender.id, request.rootId);
+  const parentPath = await resolveExistingPath(root, request.parentRelativePath);
+  const parentStats = await fs.stat(parentPath);
+
+  if (!parentStats.isDirectory()) {
+    throw new PublicError("NOT_A_DIRECTORY", "Drop files onto an existing folder.");
+  }
+
+  const sources = [];
+  const rejected = [];
+
+  for (const sourcePath of request.sourcePaths) {
+    const sourceStats = await fs.stat(sourcePath).catch(() => undefined);
+    const sourceName = path.basename(sourcePath);
+    const fileType = classifyFile(sourceName);
+
+    if (!sourceStats?.isFile() || !fileType) {
+      rejected.push(sourceName || "Unsupported item");
+      continue;
+    }
+
+    sources.push({ sourcePath, sourceName, fileType });
+  }
+
+  if (sources.length === 0) {
+    throw new PublicError(
+      "UNSUPPORTED_FILE",
+      "Drop Markdown, image, audio, video, or PDF files into the Explorer."
+    );
+  }
+
+  const imported = [];
+
+  for (const source of sources) {
+    const copied = await copyDroppedFile(root, parentPath, request.parentRelativePath, source);
+    imported.push(copied);
+  }
+
+  return { imported, rejected };
+}
+
+async function copyDroppedFile(root, parentPath, parentRelativePath, source) {
+  const parsedName = path.parse(normalizeNewEntryName(source.sourceName));
+
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
+    const name = attempt === 0 ? parsedName.base : `${parsedName.name} (${attempt})${parsedName.ext}`;
+    const relativePath = joinApiPath(parentRelativePath, name);
+    const candidatePath = path.resolve(parentPath, name);
+    assertContained(root.realPath, candidatePath);
+
+    try {
+      await fs.copyFile(source.sourcePath, candidatePath, fsConstants.COPYFILE_EXCL);
+      const realPath = await fs.realpath(candidatePath);
+      assertContained(root.realPath, realPath);
+
+      return {
+        kind: source.fileType.kind,
+        name,
+        relativePath,
+        mimeType: source.fileType.mimeType
+      };
+    } catch (error) {
+      if (hasFileSystemErrorCode(error, "EEXIST")) {
+        continue;
+      }
+
+      await fs.unlink(candidatePath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  throw new PublicError("ALREADY_EXISTS", `Markflow could not find an available name for ${source.sourceName}.`);
 }
 
 async function openMarkdown(event, payload) {
@@ -859,6 +1012,90 @@ function readPathRequest(payload) {
   };
 }
 
+function readCreateEntryRequest(payload) {
+  if (!isPlainRecord(payload)) {
+    throw new PublicError("INVALID_REQUEST", "The create request is invalid.");
+  }
+
+  return {
+    rootId: readRootId(payload.rootId),
+    parentRelativePath: normalizeApiRelativePath(payload.parentRelativePath),
+    name: normalizeNewEntryName(payload.name)
+  };
+}
+
+function readImportFilesRequest(payload) {
+  if (!isPlainRecord(payload) || !Array.isArray(payload.sourcePaths)) {
+    throw new PublicError("INVALID_REQUEST", "The dropped-file request is invalid.");
+  }
+
+  if (payload.sourcePaths.length === 0 || payload.sourcePaths.length > 100) {
+    throw new PublicError("INVALID_REQUEST", "Drop between 1 and 100 files at a time.");
+  }
+
+  const sourcePaths = payload.sourcePaths.map((sourcePath) => {
+    if (
+      typeof sourcePath !== "string" ||
+      sourcePath.length === 0 ||
+      sourcePath.length > MAX_RELATIVE_PATH_LENGTH ||
+      sourcePath.includes("\0") ||
+      !path.isAbsolute(sourcePath)
+    ) {
+      throw new PublicError("INVALID_REQUEST", "A dropped file path is invalid.");
+    }
+
+    return path.resolve(sourcePath);
+  });
+
+  return {
+    rootId: readRootId(payload.rootId),
+    parentRelativePath: normalizeApiRelativePath(payload.parentRelativePath),
+    sourcePaths
+  };
+}
+
+function normalizeNewMarkdownName(value) {
+  const name = normalizeNewEntryName(value);
+  const extension = path.extname(name).toLowerCase();
+
+  if (!extension) {
+    return normalizeNewEntryName(`${name}.md`);
+  }
+
+  if (extension !== ".md" && extension !== ".markdown") {
+    throw new PublicError("UNSUPPORTED_FILE", "New editor files must use .md or .markdown.");
+  }
+
+  return name;
+}
+
+function normalizeNewEntryName(value) {
+  if (typeof value !== "string") {
+    throw new PublicError("INVALID_NAME", "Enter a name for the new item.");
+  }
+
+  const name = value.trim();
+
+  if (
+    name.length === 0 ||
+    name.length > 255 ||
+    name === "." ||
+    name === ".." ||
+    /[<>:"/\\|?*\u0000-\u001f]/.test(name) ||
+    /[. ]$/.test(name)
+  ) {
+    throw new PublicError("INVALID_NAME", "That name is not valid on Windows.");
+  }
+
+  const windowsBaseName = name.split(".", 1)[0].toUpperCase();
+
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(windowsBaseName)) {
+    throw new PublicError("INVALID_NAME", "That name is reserved by Windows.");
+  }
+
+  return name;
+}
+
 function readAutosaveRequest(payload) {
   if (!isPlainRecord(payload)) {
     throw new PublicError("INVALID_REQUEST", "The autosave request is invalid.");
@@ -1162,6 +1399,10 @@ function isPlainRecord(value) {
 
 function publicMessage(error, fallback) {
   return error instanceof PublicError ? error.message : fallback;
+}
+
+function hasFileSystemErrorCode(error, code) {
+  return Boolean(error && typeof error === "object" && error.code === code);
 }
 
 class PublicError extends Error {
