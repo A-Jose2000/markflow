@@ -313,6 +313,14 @@ select {
   font-size: 0.76rem;
 }
 
+.desktop-sidebar__entry-button[draggable="true"] {
+  cursor: grab;
+}
+
+.desktop-sidebar__entry-button[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .desktop-sidebar__tree-item:not(.desktop-sidebar__tree-item--directory) .desktop-sidebar__entry-button {
   grid-template-columns: 1.25rem minmax(0, 1fr);
   padding-left: 1.4rem;
@@ -406,6 +414,50 @@ select {
   padding: 0.45rem 0.7rem;
   color: var(--text-muted);
   font-size: 0.7rem;
+}
+
+.desktop-sidebar__context-menu {
+  position: fixed;
+  z-index: 10000;
+  display: grid;
+  width: 13.125rem;
+  padding: 0.3rem;
+  color: var(--text-main);
+  background: #252525;
+  border: 1px solid #555555;
+  border-radius: 0.45rem;
+  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 45%);
+}
+
+.desktop-sidebar__context-menu button {
+  min-width: 0;
+  padding: 0.48rem 0.6rem;
+  overflow: hidden;
+  color: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 0.3rem;
+  font-size: 0.76rem;
+}
+
+.desktop-sidebar__context-menu button:hover,
+.desktop-sidebar__context-menu button:focus-visible {
+  color: #ffffff;
+  background: #3a3a3a;
+  outline: 0;
+}
+
+.desktop-sidebar__context-menu button.desktop-sidebar__context-menu-delete {
+  color: #fecaca;
+}
+
+.desktop-sidebar__context-menu button.desktop-sidebar__context-menu-delete:hover,
+.desktop-sidebar__context-menu button.desktop-sidebar__context-menu-delete:focus-visible {
+  background: #4a2424;
 }
 
 .desktop-sidebar__inline-error {

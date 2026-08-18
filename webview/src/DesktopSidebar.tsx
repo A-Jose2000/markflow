@@ -1,13 +1,17 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
   type FormEvent,
-  type JSX
+  type JSX,
+  type MouseEvent as ReactMouseEvent
 } from "react";
+import { createPortal } from "react-dom";
 import {
   getDesktopApi,
+  type DesktopEntryMutationResult,
   type DesktopFileTarget,
   type DesktopFolderEntry,
   type DesktopFolderRoot,
@@ -16,6 +20,12 @@ import {
 
 type DirectoryLoadStatus = "idle" | "loading" | "loaded" | "error";
 type CreateMode = "file" | "folder";
+
+interface EntryContextMenu {
+  readonly entry: DesktopFolderEntry;
+  readonly left: number;
+  readonly top: number;
+}
 
 interface DirectoryState {
   readonly expanded: boolean;
@@ -26,9 +36,11 @@ interface DirectoryState {
 
 export interface DesktopSidebarProps {
   readonly api?: MarkflowDesktopApi;
-  readonly activeTarget?: Pick<DesktopFileTarget, "rootId" | "relativePath">;
+  readonly activeTarget?: DesktopFileTarget;
   readonly onBeforeChooseFolder?: () => void | Promise<void>;
   readonly onBeforeCreate?: () => void | Promise<void>;
+  readonly onBeforeMutate?: () => void | Promise<void>;
+  readonly onActiveEntryDeleted?: () => void;
   readonly onFolderChanged?: (root: DesktopFolderRoot) => void;
   readonly onOpenMarkdown: (target: DesktopFileTarget) => void | Promise<void>;
   readonly onOpenMedia: (target: DesktopFileTarget) => void | Promise<void>;
@@ -40,6 +52,8 @@ export function DesktopSidebar({
   activeTarget,
   onBeforeChooseFolder,
   onBeforeCreate,
+  onBeforeMutate,
+  onActiveEntryDeleted,
   onFolderChanged,
   onOpenMarkdown,
   onOpenMedia,
@@ -52,13 +66,18 @@ export function DesktopSidebar({
   const [isChoosingFolder, setIsChoosingFolder] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
   const [openingPath, setOpeningPath] = useState<string | undefined>();
   const [selectedDirectoryPath, setSelectedDirectoryPath] = useState("");
   const [createMode, setCreateMode] = useState<CreateMode | undefined>();
   const [createName, setCreateName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<DesktopFolderEntry | undefined>();
+  const [renameName, setRenameName] = useState("");
+  const [contextMenu, setContextMenu] = useState<EntryContextMenu | undefined>();
   const [dropTargetPath, setDropTargetPath] = useState<string | undefined>();
   const [operationStatus, setOperationStatus] = useState<string | undefined>();
   const [sidebarError, setSidebarError] = useState<string | undefined>();
+  const draggedEntryRef = useRef<DesktopFolderEntry | undefined>(undefined);
 
   const reportError = useCallback(
     (error: unknown) => {
@@ -68,6 +87,35 @@ export function DesktopSidebar({
     },
     [onError]
   );
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const closeMenu = (event: PointerEvent) => {
+      const target = event.target;
+
+      if (target instanceof Element && target.closest(".desktop-sidebar__context-menu")) {
+        return;
+      }
+
+      setContextMenu(undefined);
+    };
+    const closeMenuFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(undefined);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeMenu, true);
+    window.addEventListener("keydown", closeMenuFromKeyboard);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu, true);
+      window.removeEventListener("keydown", closeMenuFromKeyboard);
+    };
+  }, [contextMenu]);
 
   const loadDirectory = useCallback(
     async (rootId: string, relativePath: string) => {
@@ -122,7 +170,7 @@ export function DesktopSidebar({
   );
 
   async function handleChooseFolder(): Promise<void> {
-    if (!api || isChoosingFolder || openingPath || isCreating || isImporting) {
+    if (!api || isChoosingFolder || openingPath || isCreating || isImporting || isMutating) {
       return;
     }
 
@@ -142,6 +190,9 @@ export function DesktopSidebar({
       setSelectedDirectoryPath("");
       setCreateMode(undefined);
       setCreateName("");
+      setRenameTarget(undefined);
+      setRenameName("");
+      setContextMenu(undefined);
       setOperationStatus(undefined);
       setDirectories({
         "": {
@@ -167,6 +218,9 @@ export function DesktopSidebar({
     setSelectedDirectoryPath(entry.relativePath);
     setCreateMode(undefined);
     setCreateName("");
+    setRenameTarget(undefined);
+    setRenameName("");
+    setContextMenu(undefined);
     const state = directories[entry.relativePath];
 
     if (state?.expanded) {
@@ -195,7 +249,7 @@ export function DesktopSidebar({
   }
 
   async function handleOpenFile(entry: Exclude<DesktopFolderEntry, { kind: "directory" }>): Promise<void> {
-    if (!root || openingPath || isCreating || isImporting) {
+    if (!root || openingPath || isCreating || isImporting || isMutating) {
       return;
     }
 
@@ -238,17 +292,23 @@ export function DesktopSidebar({
     setSelectedDirectoryPath("");
     setCreateMode(undefined);
     setCreateName("");
+    setRenameTarget(undefined);
+    setRenameName("");
+    setContextMenu(undefined);
     setOperationStatus(undefined);
     void loadDirectory(root.id, "");
   }
 
   function startCreate(mode: CreateMode): void {
-    if (!root || isCreating || isImporting || isChoosingFolder || openingPath) {
+    if (!root || isCreating || isImporting || isMutating || isChoosingFolder || openingPath) {
       return;
     }
 
     setCreateMode(mode);
     setCreateName("");
+    setRenameTarget(undefined);
+    setRenameName("");
+    setContextMenu(undefined);
     setSidebarError(undefined);
     setOperationStatus(undefined);
   }
@@ -316,12 +376,258 @@ export function DesktopSidebar({
     }
   }
 
-  function canAcceptFileDrop(event: ReactDragEvent<HTMLElement>): boolean {
-    return Boolean(root && !isCreating && !isImporting && Array.from(event.dataTransfer.types).includes("Files"));
+  function startRename(entry: DesktopFolderEntry): void {
+    if (isCreating || isImporting || isMutating || isChoosingFolder || openingPath) {
+      return;
+    }
+
+    setContextMenu(undefined);
+    setCreateMode(undefined);
+    setCreateName("");
+    setRenameTarget(entry);
+    setRenameName(entry.name);
+    setSidebarError(undefined);
+    setOperationStatus(undefined);
   }
 
-  function handleFileDragOver(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
-    if (!canAcceptFileDrop(event)) {
+  function cancelRename(): void {
+    if (isMutating) {
+      return;
+    }
+
+    setRenameTarget(undefined);
+    setRenameName("");
+  }
+
+  async function handleRenameSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    if (!api || !root || !renameTarget || isMutating || renameName.trim().length === 0) {
+      return;
+    }
+
+    const target = renameTarget;
+    setIsMutating(true);
+    setSidebarError(undefined);
+    setOperationStatus(`Renaming ${target.name}…`);
+
+    try {
+      await onBeforeMutate?.();
+      const result = await api.renameEntry({
+        rootId: root.id,
+        relativePath: target.relativePath,
+        name: renameName
+      });
+      await refreshAfterMutation(result);
+      relocateSelectedDirectory(result);
+      setRenameTarget(undefined);
+      setRenameName("");
+      setOperationStatus(result.changed ? `Renamed to ${result.entry.name}` : `${result.entry.name} was unchanged`);
+      await reopenRelocatedActiveTarget(result);
+    } catch (error) {
+      setOperationStatus(undefined);
+      reportError(error);
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleMoveEntry(entry: DesktopFolderEntry, destinationParentRelativePath: string): Promise<void> {
+    if (!api || !root || isMutating || !canMoveEntryTo(entry, destinationParentRelativePath)) {
+      return;
+    }
+
+    setContextMenu(undefined);
+    setIsMutating(true);
+    setSidebarError(undefined);
+    setOperationStatus(`Moving ${entry.name}…`);
+
+    try {
+      await onBeforeMutate?.();
+      const result = await api.moveEntry({
+        rootId: root.id,
+        sourceRelativePath: entry.relativePath,
+        destinationParentRelativePath
+      });
+      await refreshAfterMutation(result);
+      relocateSelectedDirectory(result);
+      setOperationStatus(result.changed ? `Moved ${result.entry.name}` : `${result.entry.name} is already there`);
+      await reopenRelocatedActiveTarget(result);
+    } catch (error) {
+      setOperationStatus(undefined);
+      reportError(error);
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  async function handleTrashEntry(entry: DesktopFolderEntry): Promise<void> {
+    if (!api || !root || isMutating) {
+      return;
+    }
+
+    setContextMenu(undefined);
+    const approved = window.confirm(
+      `Move ${entry.name} to the Windows Recycle Bin?${entry.kind === "directory" ? " Its contents will be moved too." : ""}`
+    );
+
+    if (!approved) {
+      return;
+    }
+
+    setIsMutating(true);
+    setSidebarError(undefined);
+    setOperationStatus(`Moving ${entry.name} to the Recycle Bin…`);
+
+    try {
+      await onBeforeMutate?.();
+      await api.trashEntry({ rootId: root.id, relativePath: entry.relativePath });
+      removeCachedDirectorySubtree(entry.relativePath);
+      const parentRelativePath = apiParentPath(entry.relativePath);
+      await loadDirectory(root.id, parentRelativePath);
+
+      if (pathIsWithinOrEqual(entry.relativePath, selectedDirectoryPath)) {
+        setSelectedDirectoryPath(parentRelativePath);
+      }
+
+      if (
+        activeTarget?.rootId === root.id &&
+        pathIsWithinOrEqual(entry.relativePath, activeTarget.relativePath)
+      ) {
+        onActiveEntryDeleted?.();
+      }
+
+      setRenameTarget(undefined);
+      setRenameName("");
+      setOperationStatus(`Moved ${entry.name} to the Recycle Bin`);
+    } catch (error) {
+      setOperationStatus(undefined);
+      reportError(error);
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  function handleEntryContextMenu(event: ReactMouseEvent<HTMLElement>, entry: DesktopFolderEntry): void {
+    if (isChoosingFolder || isCreating || isImporting || isMutating || openingPath) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 210;
+    const menuHeight = 132;
+    setContextMenu({
+      entry,
+      left: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+      top: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8))
+    });
+  }
+
+  function canMoveEntryTo(entry: DesktopFolderEntry, destinationParentRelativePath: string): boolean {
+    if (apiParentPath(entry.relativePath) === destinationParentRelativePath) {
+      return false;
+    }
+
+    return entry.kind !== "directory" || !pathIsWithinOrEqual(entry.relativePath, destinationParentRelativePath);
+  }
+
+  function removeCachedDirectorySubtree(relativePath: string): void {
+    setDirectories((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([cachedPath]) => !pathIsWithinOrEqual(relativePath, cachedPath))
+      )
+    );
+  }
+
+  async function refreshAfterMutation(result: DesktopEntryMutationResult): Promise<void> {
+    if (!root || !result.changed) {
+      return;
+    }
+
+    removeCachedDirectorySubtree(result.previousRelativePath);
+    const parentPaths = new Set([
+      apiParentPath(result.previousRelativePath),
+      apiParentPath(result.entry.relativePath)
+    ]);
+    await Promise.all(Array.from(parentPaths, (relativePath) => loadDirectory(root.id, relativePath)));
+  }
+
+  function relocateSelectedDirectory(result: DesktopEntryMutationResult): void {
+    if (!result.changed || !pathIsWithinOrEqual(result.previousRelativePath, selectedDirectoryPath)) {
+      return;
+    }
+
+    setSelectedDirectoryPath(relocateRelativePath(selectedDirectoryPath, result));
+  }
+
+  async function reopenRelocatedActiveTarget(result: DesktopEntryMutationResult): Promise<void> {
+    if (
+      !root ||
+      !result.changed ||
+      !activeTarget ||
+      activeTarget.rootId !== root.id ||
+      !pathIsWithinOrEqual(result.previousRelativePath, activeTarget.relativePath)
+    ) {
+      return;
+    }
+
+    const relativePath = relocateRelativePath(activeTarget.relativePath, result);
+    const relocatedTarget: DesktopFileTarget =
+      activeTarget.relativePath === result.previousRelativePath && result.entry.kind !== "directory"
+        ? { rootId: root.id, ...result.entry }
+        : { ...activeTarget, relativePath };
+
+    if (relocatedTarget.kind === "markdown") {
+      await onOpenMarkdown(relocatedTarget);
+    } else {
+      await onOpenMedia(relocatedTarget);
+    }
+  }
+
+  function canAcceptExternalFileDrop(event: ReactDragEvent<HTMLElement>): boolean {
+    return Boolean(
+      root &&
+      !isCreating &&
+      !isImporting &&
+      !isMutating &&
+      Array.from(event.dataTransfer.types).includes("Files")
+    );
+  }
+
+  function handleEntryDragStart(event: ReactDragEvent<HTMLElement>, entry: DesktopFolderEntry): void {
+    if (isChoosingFolder || isCreating || isImporting || isMutating || openingPath) {
+      event.preventDefault();
+      return;
+    }
+
+    draggedEntryRef.current = entry;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-markflow-explorer-entry", entry.relativePath);
+    event.dataTransfer.setData("text/plain", entry.name);
+    setContextMenu(undefined);
+    setOperationStatus(`Drag ${entry.name} onto a folder to move it`);
+  }
+
+  function handleEntryDragEnd(): void {
+    draggedEntryRef.current = undefined;
+    setDropTargetPath(undefined);
+    setOperationStatus(undefined);
+  }
+
+  function handleExplorerDragOver(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
+    const draggedEntry = draggedEntryRef.current;
+
+    if (draggedEntry) {
+      event.preventDefault();
+      event.stopPropagation();
+      const canMove = canMoveEntryTo(draggedEntry, relativePath);
+      event.dataTransfer.dropEffect = canMove ? "move" : "none";
+      setDropTargetPath(canMove ? relativePath : undefined);
+      return;
+    }
+
+    if (!canAcceptExternalFileDrop(event)) {
       return;
     }
 
@@ -331,7 +637,7 @@ export function DesktopSidebar({
     setDropTargetPath(relativePath);
   }
 
-  function handleFileDragLeave(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
+  function handleExplorerDragLeave(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
     const nextTarget = event.relatedTarget;
 
     if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
@@ -341,8 +647,23 @@ export function DesktopSidebar({
     setDropTargetPath((current) => (current === relativePath ? undefined : current));
   }
 
-  async function handleFileDrop(event: ReactDragEvent<HTMLElement>, relativePath: string): Promise<void> {
-    if (!api || !root || !canAcceptFileDrop(event)) {
+  async function handleExplorerDrop(event: ReactDragEvent<HTMLElement>, relativePath: string): Promise<void> {
+    if (!api || !root) {
+      return;
+    }
+
+    const draggedEntry = draggedEntryRef.current;
+
+    if (draggedEntry) {
+      event.preventDefault();
+      event.stopPropagation();
+      draggedEntryRef.current = undefined;
+      setDropTargetPath(undefined);
+      await handleMoveEntry(draggedEntry, relativePath);
+      return;
+    }
+
+    if (!canAcceptExternalFileDrop(event)) {
       return;
     }
 
@@ -380,6 +701,15 @@ export function DesktopSidebar({
     }
   }
 
+  function blockDropOnFile(event: ReactDragEvent<HTMLElement>): void {
+    if (draggedEntryRef.current || Array.from(event.dataTransfer.types).includes("Files")) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "none";
+      setDropTargetPath(undefined);
+    }
+  }
+
   function renderDirectory(relativePath: string, level: number): JSX.Element | null {
     const state = directories[relativePath];
 
@@ -402,16 +732,20 @@ export function DesktopSidebar({
                   dropTargetPath === entry.relativePath ? " desktop-sidebar__tree-item--drop-target" : ""
                 }`}
                 key={entry.relativePath}
-                onDragLeave={(event) => handleFileDragLeave(event, entry.relativePath)}
-                onDragOver={(event) => handleFileDragOver(event, entry.relativePath)}
-                onDrop={(event) => void handleFileDrop(event, entry.relativePath)}
+                onDragLeave={(event) => handleExplorerDragLeave(event, entry.relativePath)}
+                onDragOver={(event) => handleExplorerDragOver(event, entry.relativePath)}
+                onDrop={(event) => void handleExplorerDrop(event, entry.relativePath)}
                 role="treeitem"
               >
                 <button
                   aria-label={`${isExpanded ? "Collapse" : "Expand"} folder ${entry.name}`}
                   className="desktop-sidebar__entry-button"
                   data-selected={selectedDirectoryPath === entry.relativePath}
+                  draggable={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
                   onClick={() => handleToggleDirectory(entry)}
+                  onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                  onDragEnd={handleEntryDragEnd}
+                  onDragStart={(event) => handleEntryDragStart(event, entry)}
                   type="button"
                 >
                   <span aria-hidden="true" className="desktop-sidebar__disclosure">
@@ -453,14 +787,20 @@ export function DesktopSidebar({
               aria-selected={isActive}
               className={`desktop-sidebar__tree-item desktop-sidebar__tree-item--${entry.kind}`}
               key={entry.relativePath}
+              onDragOver={blockDropOnFile}
+              onDrop={blockDropOnFile}
               role="treeitem"
             >
               <button
                 aria-busy={isOpening}
                 aria-current={isActive ? "page" : undefined}
                 className="desktop-sidebar__entry-button"
-                disabled={isChoosingFolder || isCreating || isImporting || Boolean(openingPath)}
+                disabled={isChoosingFolder || isCreating || isImporting || isMutating || Boolean(openingPath)}
+                draggable={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
                 onClick={() => void handleOpenFile(entry)}
+                onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                onDragEnd={handleEntryDragEnd}
+                onDragStart={(event) => handleEntryDragStart(event, entry)}
                 title={entry.relativePath}
                 type="button"
               >
@@ -485,7 +825,7 @@ export function DesktopSidebar({
   }
 
   const rootDirectory = directories[""];
-  const isBusy = isChoosingFolder || isCreating || isImporting || Boolean(openingPath);
+  const isBusy = isChoosingFolder || isCreating || isImporting || isMutating || Boolean(openingPath);
   const selectedDirectoryLabel = selectedDirectoryPath || root?.name || "selected folder";
 
   return (
@@ -500,6 +840,7 @@ export function DesktopSidebar({
               onClick={() => {
                 setSelectedDirectoryPath("");
                 cancelCreate();
+                cancelRename();
               }}
               title={`${root.displayPath} · Select as create/drop target`}
               type="button"
@@ -575,6 +916,41 @@ export function DesktopSidebar({
         </form>
       ) : null}
 
+      {root && renameTarget ? (
+        <form className="desktop-sidebar__create-form" onSubmit={(event) => void handleRenameSubmit(event)}>
+          <label htmlFor="desktop-sidebar-rename-name">
+            <strong>Rename {renameTarget.kind === "directory" ? "folder" : "file"}</strong>
+            <span title={renameTarget.relativePath}>{renameTarget.relativePath}</span>
+          </label>
+          <input
+            id="desktop-sidebar-rename-name"
+            autoFocus
+            disabled={isMutating}
+            onChange={(event) => setRenameName(event.currentTarget.value)}
+            onFocus={(event) => {
+              const extensionIndex = renameTarget.kind === "directory" ? -1 : renameTarget.name.lastIndexOf(".");
+              event.currentTarget.setSelectionRange(0, extensionIndex > 0 ? extensionIndex : renameTarget.name.length);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelRename();
+              }
+            }}
+            spellCheck={false}
+            value={renameName}
+          />
+          <div>
+            <button disabled={isMutating || renameName.trim().length === 0} type="submit">
+              {isMutating ? "Renaming…" : "Rename"}
+            </button>
+            <button disabled={isMutating} onClick={cancelRename} type="button">
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+
       {sidebarError ? (
         <div className="desktop-sidebar__error" role="alert">
           {sidebarError}
@@ -596,9 +972,9 @@ export function DesktopSidebar({
           aria-busy={rootDirectory?.status === "loading" || isImporting}
           aria-label={`${root.name} contents`}
           className={dropTargetPath === "" ? "desktop-sidebar__root-drop-target" : undefined}
-          onDragLeave={(event) => handleFileDragLeave(event, "")}
-          onDragOver={(event) => handleFileDragOver(event, "")}
-          onDrop={(event) => void handleFileDrop(event, "")}
+          onDragLeave={(event) => handleExplorerDragLeave(event, "")}
+          onDragOver={(event) => handleExplorerDragOver(event, "")}
+          onDrop={(event) => void handleExplorerDrop(event, "")}
         >
           {rootDirectory?.status === "loading" && rootDirectory.entries.length === 0 ? (
             <p className="desktop-sidebar__status" role="status">
@@ -611,6 +987,41 @@ export function DesktopSidebar({
           {renderDirectory("", 1)}
         </nav>
       )}
+
+      {contextMenu
+        ? createPortal(
+            <div
+              aria-label={`Actions for ${contextMenu.entry.name}`}
+              className="desktop-sidebar__context-menu"
+              onContextMenu={(event) => event.preventDefault()}
+              role="menu"
+              style={{ left: contextMenu.left, top: contextMenu.top }}
+            >
+              <button onClick={() => startRename(contextMenu.entry)} role="menuitem" type="button">
+                Rename
+              </button>
+              {canMoveEntryTo(contextMenu.entry, selectedDirectoryPath) ? (
+                <button
+                  onClick={() => void handleMoveEntry(contextMenu.entry, selectedDirectoryPath)}
+                  role="menuitem"
+                  title={selectedDirectoryPath}
+                  type="button"
+                >
+                  Move to {selectedDirectoryLabel}
+                </button>
+              ) : null}
+              <button
+                className="desktop-sidebar__context-menu-delete"
+                onClick={() => void handleTrashEntry(contextMenu.entry)}
+                role="menuitem"
+                type="button"
+              >
+                Move to Recycle Bin
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
     </aside>
   );
 }
@@ -628,4 +1039,21 @@ function iconForKind(kind: DesktopFileTarget["kind"]): string {
     case "pdf":
       return "PDF";
   }
+}
+
+function apiParentPath(relativePath: string): string {
+  const separatorIndex = relativePath.lastIndexOf("/");
+  return separatorIndex < 0 ? "" : relativePath.slice(0, separatorIndex);
+}
+
+function pathIsWithinOrEqual(parentPath: string, candidatePath: string): boolean {
+  return parentPath === "" || candidatePath === parentPath || candidatePath.startsWith(`${parentPath}/`);
+}
+
+function relocateRelativePath(relativePath: string, result: DesktopEntryMutationResult): string {
+  if (relativePath === result.previousRelativePath) {
+    return result.entry.relativePath;
+  }
+
+  return `${result.entry.relativePath}${relativePath.slice(result.previousRelativePath.length)}`;
 }

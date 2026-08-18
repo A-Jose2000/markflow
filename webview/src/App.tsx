@@ -625,6 +625,18 @@ export function App(): JSX.Element {
     commitMarkdownState("");
   }
 
+  function handleDesktopActiveEntryDeleted(): void {
+    desktopNavigationGenerationRef.current += 1;
+    desktopAutosaveRef.current?.dispose();
+    clearPendingEdit();
+    setDesktopView(undefined);
+    setDesktopActiveTarget(undefined);
+    setDesktopSaveState("idle");
+    setDesktopError(undefined);
+    setResourcePath(undefined);
+    commitMarkdownState("");
+  }
+
   async function handleDiscardAndReloadDesktopMarkdown(): Promise<void> {
     if (!desktopApi || desktopView?.type !== "markdown") {
       return;
@@ -748,8 +760,10 @@ export function App(): JSX.Element {
         <DesktopSidebar
           activeTarget={desktopActiveTarget}
           api={desktopApi}
+          onActiveEntryDeleted={handleDesktopActiveEntryDeleted}
           onBeforeChooseFolder={flushDesktopChanges}
           onBeforeCreate={flushDesktopChanges}
+          onBeforeMutate={flushDesktopChanges}
           onError={(error) => setDesktopError(error.message)}
           onFolderChanged={handleDesktopFolderChanged}
           onOpenMarkdown={handleOpenDesktopMarkdown}

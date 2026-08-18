@@ -8,6 +8,9 @@ const CHANNELS = Object.freeze({
   createMarkdownFile: "markflow-desktop:create-markdown-file",
   createFolder: "markflow-desktop:create-folder",
   importDroppedFiles: "markflow-desktop:import-dropped-files",
+  moveEntry: "markflow-desktop:move-entry",
+  renameEntry: "markflow-desktop:rename-entry",
+  trashEntry: "markflow-desktop:trash-entry",
   openMarkdown: "markflow-desktop:open-markdown",
   openMedia: "markflow-desktop:open-media",
   autosaveCurrentMarkdown: "markflow-desktop:autosave-current-markdown",
@@ -32,6 +35,9 @@ const desktopApi = Object.freeze({
       sourcePaths
     });
   },
+  moveEntry: (request) => ipcRenderer.invoke(CHANNELS.moveEntry, request),
+  renameEntry: (request) => ipcRenderer.invoke(CHANNELS.renameEntry, request),
+  trashEntry: (request) => ipcRenderer.invoke(CHANNELS.trashEntry, request),
   openMarkdown: (request) => ipcRenderer.invoke(CHANNELS.openMarkdown, request),
   openMedia: (request) => ipcRenderer.invoke(CHANNELS.openMedia, request),
   autosaveCurrentMarkdown: (request) => ipcRenderer.invoke(CHANNELS.autosaveCurrentMarkdown, request),

@@ -51,6 +51,29 @@ export interface DesktopImportResult {
   readonly rejected: string[];
 }
 
+export interface DesktopMoveEntryRequest {
+  readonly rootId: string;
+  readonly sourceRelativePath: string;
+  readonly destinationParentRelativePath: string;
+}
+
+export interface DesktopRenameEntryRequest {
+  readonly rootId: string;
+  readonly relativePath: string;
+  readonly name: string;
+}
+
+export interface DesktopEntryMutationResult {
+  readonly changed: boolean;
+  readonly previousRelativePath: string;
+  readonly entry: DesktopFolderEntry;
+}
+
+export interface DesktopTrashResult {
+  readonly relativePath: string;
+  readonly name: string;
+}
+
 export interface DesktopMarkdownDocument {
   readonly rootId: string;
   readonly relativePath: string;
@@ -111,6 +134,9 @@ export interface MarkflowDesktopApi {
   createMarkdownFile(request: DesktopCreateEntryRequest): Promise<DesktopFileEntry>;
   createFolder(request: DesktopCreateEntryRequest): Promise<DesktopDirectoryEntry>;
   importDroppedFiles(request: DesktopDroppedFilesRequest, files: File[]): Promise<DesktopImportResult>;
+  moveEntry(request: DesktopMoveEntryRequest): Promise<DesktopEntryMutationResult>;
+  renameEntry(request: DesktopRenameEntryRequest): Promise<DesktopEntryMutationResult>;
+  trashEntry(request: DesktopPathRequest): Promise<DesktopTrashResult>;
   openMarkdown(request: DesktopPathRequest): Promise<DesktopMarkdownDocument>;
   openMedia(request: DesktopPathRequest): Promise<DesktopMediaDocument>;
   autosaveCurrentMarkdown(request: DesktopAutosaveRequest): Promise<DesktopSaveResult>;
@@ -138,6 +164,9 @@ export function getDesktopApi(): MarkflowDesktopApi | undefined {
     typeof api.createMarkdownFile !== "function" ||
     typeof api.createFolder !== "function" ||
     typeof api.importDroppedFiles !== "function" ||
+    typeof api.moveEntry !== "function" ||
+    typeof api.renameEntry !== "function" ||
+    typeof api.trashEntry !== "function" ||
     typeof api.openMarkdown !== "function" ||
     typeof api.openMedia !== "function" ||
     typeof api.autosaveCurrentMarkdown !== "function" ||

@@ -10,7 +10,8 @@ const {
   dialog,
   ipcMain,
   net,
-  protocol
+  protocol,
+  shell
 } = require("electron");
 
 const APP_SCHEME = "markflow-app";
@@ -60,6 +61,9 @@ const CHANNELS = Object.freeze({
   createMarkdownFile: "markflow-desktop:create-markdown-file",
   createFolder: "markflow-desktop:create-folder",
   importDroppedFiles: "markflow-desktop:import-dropped-files",
+  moveEntry: "markflow-desktop:move-entry",
+  renameEntry: "markflow-desktop:rename-entry",
+  trashEntry: "markflow-desktop:trash-entry",
   openMarkdown: "markflow-desktop:open-markdown",
   openMedia: "markflow-desktop:open-media",
   autosaveCurrentMarkdown: "markflow-desktop:autosave-current-markdown",
@@ -253,6 +257,9 @@ function registerIpcHandlers() {
   registerIpcHandler(CHANNELS.createMarkdownFile, createMarkdownFile);
   registerIpcHandler(CHANNELS.createFolder, createFolder);
   registerIpcHandler(CHANNELS.importDroppedFiles, importDroppedFiles);
+  registerIpcHandler(CHANNELS.moveEntry, moveEntry);
+  registerIpcHandler(CHANNELS.renameEntry, renameEntry);
+  registerIpcHandler(CHANNELS.trashEntry, trashEntry);
   registerIpcHandler(CHANNELS.openMarkdown, openMarkdown);
   registerIpcHandler(CHANNELS.openMedia, openMedia);
   registerIpcHandler(CHANNELS.autosaveCurrentMarkdown, autosaveCurrentMarkdown);
@@ -650,6 +657,214 @@ async function copyDroppedFile(root, parentPath, parentRelativePath, source) {
   }
 
   throw new PublicError("ALREADY_EXISTS", `Markflow could not find an available name for ${source.sourceName}.`);
+}
+
+async function moveEntry(event, payload) {
+  const request = readMoveEntryRequest(payload);
+  const root = getOwnedRoot(event.sender.id, request.rootId);
+  const sourcePath = await resolveExistingPath(root, request.sourceRelativePath);
+  const sourceEntry = await readExplorerEntry(sourcePath, request.sourceRelativePath);
+  const destinationParentPath = await resolveExistingPath(root, request.destinationParentRelativePath);
+  const destinationParentStats = await fs.stat(destinationParentPath);
+
+  if (!destinationParentStats.isDirectory()) {
+    throw new PublicError("NOT_A_DIRECTORY", "Move items into an existing folder.");
+  }
+
+  if (sourceEntry.kind === "directory" && isPathWithinOrEqual(sourcePath, destinationParentPath)) {
+    throw new PublicError("INVALID_DESTINATION", "A folder cannot be moved into itself or one of its subfolders.");
+  }
+
+  const nextRelativePath = joinApiPath(request.destinationParentRelativePath, sourceEntry.name);
+  const destinationPath = path.resolve(destinationParentPath, sourceEntry.name);
+  assertContained(root.realPath, destinationPath);
+
+  if (sameFileSystemPath(sourcePath, destinationPath)) {
+    return {
+      changed: false,
+      previousRelativePath: request.sourceRelativePath,
+      entry: sourceEntry
+    };
+  }
+
+  await assertDestinationAvailable(destinationPath, sourcePath);
+
+  try {
+    await fs.rename(sourcePath, destinationPath);
+  } catch (error) {
+    if (hasFileSystemErrorCode(error, "EEXIST") || hasFileSystemErrorCode(error, "ENOTEMPTY")) {
+      throw new PublicError("ALREADY_EXISTS", "A file or folder with that name already exists there.");
+    }
+
+    throw error;
+  }
+
+  const realDestinationPath = await fs.realpath(destinationPath);
+  assertContained(root.realPath, realDestinationPath);
+  await updateActiveMarkdownAfterRelocation(
+    event.sender.id,
+    root,
+    sourcePath,
+    realDestinationPath
+  );
+
+  return {
+    changed: true,
+    previousRelativePath: request.sourceRelativePath,
+    entry: await readExplorerEntry(realDestinationPath, nextRelativePath)
+  };
+}
+
+async function renameEntry(event, payload) {
+  const request = readRenameEntryRequest(payload);
+  const root = getOwnedRoot(event.sender.id, request.rootId);
+  const sourcePath = await resolveExistingPath(root, request.relativePath);
+  const sourceEntry = await readExplorerEntry(sourcePath, request.relativePath);
+  const parentRelativePath = apiParentPath(request.relativePath);
+  const parentPath = path.dirname(sourcePath);
+  let name = normalizeNewEntryName(request.name);
+
+  if (sourceEntry.kind !== "directory") {
+    if (!path.extname(name) && sourceEntry.kind === "markdown") {
+      name = normalizeNewEntryName(`${name}.md`);
+    }
+
+    const nextFileType = classifyFile(name);
+
+    if (!nextFileType || nextFileType.kind !== sourceEntry.kind) {
+      throw new PublicError(
+        "UNSUPPORTED_FILE",
+        `Keep a supported ${sourceEntry.kind} extension when renaming this file.`
+      );
+    }
+  }
+
+  const nextRelativePath = joinApiPath(parentRelativePath, name);
+  const destinationPath = path.resolve(parentPath, name);
+  assertContained(root.realPath, destinationPath);
+
+  if (sourceEntry.name === name) {
+    return {
+      changed: false,
+      previousRelativePath: request.relativePath,
+      entry: sourceEntry
+    };
+  }
+
+  await assertDestinationAvailable(destinationPath, sourcePath);
+
+  try {
+    await fs.rename(sourcePath, destinationPath);
+  } catch (error) {
+    if (hasFileSystemErrorCode(error, "EEXIST") || hasFileSystemErrorCode(error, "ENOTEMPTY")) {
+      throw new PublicError("ALREADY_EXISTS", "A file or folder with that name already exists.");
+    }
+
+    throw error;
+  }
+
+  const realDestinationPath = await fs.realpath(destinationPath);
+  assertContained(root.realPath, realDestinationPath);
+  await updateActiveMarkdownAfterRelocation(
+    event.sender.id,
+    root,
+    sourcePath,
+    realDestinationPath
+  );
+
+  return {
+    changed: true,
+    previousRelativePath: request.relativePath,
+    entry: await readExplorerEntry(realDestinationPath, nextRelativePath)
+  };
+}
+
+async function trashEntry(event, payload) {
+  const request = readPathRequest(payload);
+
+  if (!request.relativePath) {
+    throw new PublicError("INVALID_REQUEST", "The open Explorer folder cannot be deleted from Markflow.");
+  }
+
+  const root = getOwnedRoot(event.sender.id, request.rootId);
+  const sourcePath = await resolveExistingPath(root, request.relativePath);
+  const entry = await readExplorerEntry(sourcePath, request.relativePath);
+
+  await shell.trashItem(sourcePath);
+  clearActiveMarkdownInside(event.sender.id, sourcePath);
+
+  return {
+    relativePath: request.relativePath,
+    name: entry.name
+  };
+}
+
+async function readExplorerEntry(realPath, relativePath) {
+  const stats = await fs.stat(realPath);
+  const name = path.basename(realPath);
+
+  if (stats.isDirectory()) {
+    return {
+      kind: "directory",
+      name,
+      relativePath
+    };
+  }
+
+  if (!stats.isFile()) {
+    throw new PublicError("NOT_A_FILE", "That Explorer item is not a regular file or folder.");
+  }
+
+  const fileType = classifyFile(name);
+
+  if (!fileType) {
+    throw new PublicError("UNSUPPORTED_FILE", "That file type is not supported by Markflow.");
+  }
+
+  return {
+    kind: fileType.kind,
+    name,
+    relativePath,
+    mimeType: fileType.mimeType
+  };
+}
+
+async function assertDestinationAvailable(destinationPath, sourcePath) {
+  try {
+    const existingPath = await fs.realpath(destinationPath);
+
+    if (!sameFileSystemPath(existingPath, sourcePath)) {
+      throw new PublicError("ALREADY_EXISTS", "A file or folder with that name already exists there.");
+    }
+  } catch (error) {
+    if (hasFileSystemErrorCode(error, "ENOENT")) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function updateActiveMarkdownAfterRelocation(ownerId, root, sourcePath, destinationPath) {
+  const active = activeMarkdownByOwner.get(ownerId);
+
+  if (!active || !isPathWithinOrEqual(sourcePath, active.realPath)) {
+    return;
+  }
+
+  const suffix = path.relative(sourcePath, active.realPath);
+  const nextPath = path.resolve(destinationPath, suffix);
+  assertContained(root.realPath, nextPath);
+  active.realPath = await fs.realpath(nextPath);
+  active.relativePath = toApiRelativePath(path.relative(root.realPath, active.realPath));
+}
+
+function clearActiveMarkdownInside(ownerId, sourcePath) {
+  const active = activeMarkdownByOwner.get(ownerId);
+
+  if (active && isPathWithinOrEqual(sourcePath, active.realPath)) {
+    activeMarkdownByOwner.delete(ownerId);
+  }
 }
 
 async function openMarkdown(event, payload) {
@@ -1054,6 +1269,42 @@ function readImportFilesRequest(payload) {
   };
 }
 
+function readMoveEntryRequest(payload) {
+  if (!isPlainRecord(payload)) {
+    throw new PublicError("INVALID_REQUEST", "The move request is invalid.");
+  }
+
+  const sourceRelativePath = normalizeApiRelativePath(payload.sourceRelativePath);
+
+  if (!sourceRelativePath) {
+    throw new PublicError("INVALID_REQUEST", "The open Explorer folder cannot be moved.");
+  }
+
+  return {
+    rootId: readRootId(payload.rootId),
+    sourceRelativePath,
+    destinationParentRelativePath: normalizeApiRelativePath(payload.destinationParentRelativePath)
+  };
+}
+
+function readRenameEntryRequest(payload) {
+  if (!isPlainRecord(payload)) {
+    throw new PublicError("INVALID_REQUEST", "The rename request is invalid.");
+  }
+
+  const relativePath = normalizeApiRelativePath(payload.relativePath);
+
+  if (!relativePath) {
+    throw new PublicError("INVALID_REQUEST", "The open Explorer folder cannot be renamed.");
+  }
+
+  return {
+    rootId: readRootId(payload.rootId),
+    relativePath,
+    name: normalizeNewEntryName(payload.name)
+  };
+}
+
 function normalizeNewMarkdownName(value) {
   const name = normalizeNewEntryName(value);
   const extension = path.extname(name).toLowerCase();
@@ -1261,6 +1512,22 @@ function createMediaUrl(rootId, relativePath) {
 
 function joinApiPath(parentPath, childName) {
   return parentPath ? `${parentPath}/${childName}` : childName;
+}
+
+function apiParentPath(relativePath) {
+  const separatorIndex = relativePath.lastIndexOf("/");
+  return separatorIndex < 0 ? "" : relativePath.slice(0, separatorIndex);
+}
+
+function isPathWithinOrEqual(parentPath, candidatePath) {
+  const relative = path.relative(parentPath, candidatePath);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function sameFileSystemPath(leftPath, rightPath) {
+  const left = path.resolve(leftPath);
+  const right = path.resolve(rightPath);
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
 
 function toApiRelativePath(relativePath) {
