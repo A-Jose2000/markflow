@@ -2,6 +2,15 @@ node_modules/
 dist/
 webview/node_modules/
 webview/dist/
+desktop/node_modules/
+desktop/dist/
+desktop/release/
+mobile/node_modules/
+mobile/.expo/
+mobile/.android-toolchain/
+mobile/.gradle/
+mobile/android/
+mobile/ios/
 package/*.vsix
 testing/
 *.log

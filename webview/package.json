@@ -5,11 +5,17 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite build --watch"
+    "build:desktop": "vite build --config vite.desktop.config.ts",
+    "dev": "vite build --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@lexical/react": "^0.35.0",
+    "@lexical/rich-text": "^0.35.0",
+    "@mdxeditor/gurx": "^1.2.4",
     "@mdxeditor/editor": "^4.0.4",
     "katex": "^0.17.0",
+    "lexical": "^0.35.0",
     "mdast-util-math": "^3.0.0",
     "micromark-extension-math": "^3.1.0",
     "react": "^19.2.7",

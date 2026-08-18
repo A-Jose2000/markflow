@@ -1,10 +1,20 @@
-import { $getNodeByKey, DecoratorNode, type EditorConfig, type LexicalEditor, type LexicalNode, type NodeKey, type SerializedLexicalNode } from "lexical";
+import {
+  $getNodeByKey,
+  $isElementNode,
+  DecoratorNode,
+  type EditorConfig,
+  type LexicalEditor,
+  type LexicalNode,
+  type NodeKey,
+  type SerializedLexicalNode
+} from "lexical";
 import type { InlineMath, Math as FlowMath } from "mdast-util-math";
 import { mathFromMarkdown, mathToMarkdown } from "mdast-util-math";
 import { math } from "micromark-extension-math";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
 import katex from "katex";
 import type { MdxEditorModule } from "./App";
+import type { LexicalExportVisitor, MdastImportVisitor, RealmPlugin } from "@mdxeditor/editor";
 
 type MathMdastNode = InlineMath | FlowMath;
 
@@ -204,9 +214,29 @@ function $isMathNode(node: LexicalNode | null | undefined): node is MathNode {
   return node instanceof MathNode;
 }
 
-export function markflowMathPlugin(editorModule: MdxEditorModule): ReturnType<MdxEditorModule["realmPlugin"]> {
+export function markflowMathPlugin(editorModule: MdxEditorModule): RealmPlugin {
   const { realmPlugin, addSyntaxExtension$, addMdastExtension$, addToMarkdownExtension$, addImportVisitor$, addLexicalNode$, addExportVisitor$ } =
     editorModule;
+  const importVisitor: MdastImportVisitor<MathMdastNode> = {
+    testNode: (mdastNode): mdastNode is MathMdastNode =>
+      mdastNode.type === "inlineMath" || mdastNode.type === "math",
+    visitNode({ mdastNode, lexicalParent }) {
+      if (!$isElementNode(lexicalParent)) {
+        throw new Error("Math Markdown must be imported into an element node.");
+      }
+
+      lexicalParent.append($createMathNode(mdastNode.value, mdastNode.type === "inlineMath"));
+    }
+  };
+  const exportVisitor: LexicalExportVisitor<MathNode, MathMdastNode> = {
+    testLexicalNode: $isMathNode,
+    visitLexicalNode({ actions, lexicalNode, mdastParent }) {
+      actions.appendToParent(mdastParent, {
+        type: lexicalNode.isInline() ? "inlineMath" : "math",
+        value: lexicalNode.getFormula()
+      });
+    }
+  };
 
   return realmPlugin({
     init(realm) {
@@ -214,23 +244,9 @@ export function markflowMathPlugin(editorModule: MdxEditorModule): ReturnType<Md
         [addSyntaxExtension$]: math({ singleDollarTextMath: true }),
         [addMdastExtension$]: mathFromMarkdown(),
         [addToMarkdownExtension$]: mathToMarkdown(),
-        [addImportVisitor$]: {
-          testNode: (mdastNode): mdastNode is MathMdastNode =>
-            mdastNode.type === "inlineMath" || mdastNode.type === "math",
-          visitNode({ mdastNode, lexicalParent }) {
-            lexicalParent.append($createMathNode(mdastNode.value, mdastNode.type === "inlineMath"));
-          }
-        },
+        [addImportVisitor$]: importVisitor,
         [addLexicalNode$]: MathNode,
-        [addExportVisitor$]: {
-          testLexicalNode: $isMathNode,
-          visitLexicalNode({ actions, lexicalNode, mdastParent }) {
-            actions.appendToParent(mdastParent, {
-              type: lexicalNode.isInline() ? "inlineMath" : "math",
-              value: lexicalNode.getFormula()
-            });
-          }
-        }
+        [addExportVisitor$]: exportVisitor
       });
     }
   })();

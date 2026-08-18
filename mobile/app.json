@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "Markflow",
+    "slug": "markflow-mobile",
+    "version": "0.1.0",
+    "orientation": "default",
+    "platforms": [
+      "android"
+    ],
+    "scheme": "markflow",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0d1117",
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "com.ajose.markflow",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0d1117"
+      },
+      "permissions": [
+        "android.permission.INTERNET"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": {
+            "scheme": "https",
+            "host": "github.com"
+          }
+        },
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": {
+            "scheme": "https",
+            "host": "raw.githubusercontent.com"
+          }
+        },
+        {
+          "action": "VIEW",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": {
+            "scheme": "content",
+            "mimeType": "text/*"
+          }
+        },
+        {
+          "action": "VIEW",
+          "category": [
+            "DEFAULT"
+          ],
+          "data": {
+            "scheme": "file",
+            "mimeType": "text/*"
+          }
+        }
+      ]
+    },
+    "plugins": [
+      "expo-document-picker",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4189305b-5ac6-4887-9244-8d6860c06443"
+      }
+    }
+  }
+}

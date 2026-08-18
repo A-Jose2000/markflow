@@ -20,6 +20,13 @@ export type WebviewToExtensionMessage =
       markdown: string;
     }
   | {
+      type: "codexSelection";
+      text: string;
+      source: "raw" | "rich";
+      startIndex?: number;
+      endIndex?: number;
+    }
+  | {
       type: "copyText";
       text: string;
     }
