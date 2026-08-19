@@ -17,6 +17,12 @@ import {
   type DesktopFolderRoot,
   type MarkflowDesktopApi
 } from "./desktopApi";
+import {
+  hasExplorerDragPayload,
+  readExplorerDragPayload,
+  writeExplorerDragPayload,
+  type ExplorerDragPayload
+} from "./explorerDragHandler";
 
 type DirectoryLoadStatus = "idle" | "loading" | "loaded" | "error";
 type CreateMode = "file" | "folder";
@@ -77,7 +83,7 @@ export function DesktopSidebar({
   const [dropTargetPath, setDropTargetPath] = useState<string | undefined>();
   const [operationStatus, setOperationStatus] = useState<string | undefined>();
   const [sidebarError, setSidebarError] = useState<string | undefined>();
-  const draggedEntryRef = useRef<DesktopFolderEntry | undefined>(undefined);
+  const draggedEntryRef = useRef<ExplorerDragPayload | undefined>(undefined);
 
   const reportError = useCallback(
     (error: unknown) => {
@@ -596,15 +602,14 @@ export function DesktopSidebar({
   }
 
   function handleEntryDragStart(event: ReactDragEvent<HTMLElement>, entry: DesktopFolderEntry): void {
-    if (isChoosingFolder || isCreating || isImporting || isMutating || openingPath) {
+    if (!root || isChoosingFolder || isCreating || isImporting || isMutating || openingPath) {
       event.preventDefault();
       return;
     }
 
-    draggedEntryRef.current = entry;
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-markflow-explorer-entry", entry.relativePath);
-    event.dataTransfer.setData("text/plain", entry.name);
+    const payload = { rootId: root.id, entry } satisfies ExplorerDragPayload;
+    draggedEntryRef.current = payload;
+    writeExplorerDragPayload(event.dataTransfer, payload);
     setContextMenu(undefined);
     setOperationStatus(`Drag ${entry.name} onto a folder to move it`);
   }
@@ -615,13 +620,24 @@ export function DesktopSidebar({
     setOperationStatus(undefined);
   }
 
-  function handleExplorerDragOver(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
-    const draggedEntry = draggedEntryRef.current;
+  function handleExplorerDragOver(event: ReactDragEvent<HTMLElement>): void {
+    const relativePath = readDropDestination(event.target);
 
-    if (draggedEntry) {
+    if (relativePath === undefined) {
+      return;
+    }
+
+    const dragPayload = draggedEntryRef.current;
+
+    if (dragPayload || hasExplorerDragPayload(event.dataTransfer)) {
       event.preventDefault();
       event.stopPropagation();
-      const canMove = canMoveEntryTo(draggedEntry, relativePath);
+      const canMove = Boolean(
+        dragPayload &&
+        root &&
+        dragPayload.rootId === root.id &&
+        canMoveEntryTo(dragPayload.entry, relativePath)
+      );
       event.dataTransfer.dropEffect = canMove ? "move" : "none";
       setDropTargetPath(canMove ? relativePath : undefined);
       return;
@@ -637,29 +653,41 @@ export function DesktopSidebar({
     setDropTargetPath(relativePath);
   }
 
-  function handleExplorerDragLeave(event: ReactDragEvent<HTMLElement>, relativePath: string): void {
+  function handleExplorerDragLeave(event: ReactDragEvent<HTMLElement>): void {
     const nextTarget = event.relatedTarget;
 
     if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
       return;
     }
 
-    setDropTargetPath((current) => (current === relativePath ? undefined : current));
+    setDropTargetPath(undefined);
   }
 
-  async function handleExplorerDrop(event: ReactDragEvent<HTMLElement>, relativePath: string): Promise<void> {
+  async function handleExplorerDrop(event: ReactDragEvent<HTMLElement>): Promise<void> {
     if (!api || !root) {
       return;
     }
 
-    const draggedEntry = draggedEntryRef.current;
+    const relativePath = readDropDestination(event.target);
 
-    if (draggedEntry) {
+    if (relativePath === undefined) {
+      return;
+    }
+
+    const dragPayload = draggedEntryRef.current ?? readExplorerDragPayload(event.dataTransfer);
+
+    if (dragPayload) {
       event.preventDefault();
       event.stopPropagation();
       draggedEntryRef.current = undefined;
       setDropTargetPath(undefined);
-      await handleMoveEntry(draggedEntry, relativePath);
+
+      if (dragPayload.rootId !== root.id) {
+        reportError(new Error("That item belongs to a different Explorer workspace."));
+        return;
+      }
+
+      await handleMoveEntry(dragPayload.entry, relativePath);
       return;
     }
 
@@ -701,15 +729,6 @@ export function DesktopSidebar({
     }
   }
 
-  function blockDropOnFile(event: ReactDragEvent<HTMLElement>): void {
-    if (draggedEntryRef.current || Array.from(event.dataTransfer.types).includes("Files")) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.dataTransfer.dropEffect = "none";
-      setDropTargetPath(undefined);
-    }
-  }
-
   function renderDirectory(relativePath: string, level: number): JSX.Element | null {
     const state = directories[relativePath];
 
@@ -731,31 +750,34 @@ export function DesktopSidebar({
                 className={`desktop-sidebar__tree-item desktop-sidebar__tree-item--directory${
                   dropTargetPath === entry.relativePath ? " desktop-sidebar__tree-item--drop-target" : ""
                 }`}
+                data-explorer-drop-path={entry.relativePath}
                 key={entry.relativePath}
-                onDragLeave={(event) => handleExplorerDragLeave(event, entry.relativePath)}
-                onDragOver={(event) => handleExplorerDragOver(event, entry.relativePath)}
-                onDrop={(event) => void handleExplorerDrop(event, entry.relativePath)}
                 role="treeitem"
               >
-                <button
-                  aria-label={`${isExpanded ? "Collapse" : "Expand"} folder ${entry.name}`}
-                  className="desktop-sidebar__entry-button"
-                  data-selected={selectedDirectoryPath === entry.relativePath}
+                <div
+                  className="desktop-sidebar__entry-row"
                   draggable={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
-                  onClick={() => handleToggleDirectory(entry)}
-                  onContextMenu={(event) => handleEntryContextMenu(event, entry)}
                   onDragEnd={handleEntryDragEnd}
                   onDragStart={(event) => handleEntryDragStart(event, entry)}
-                  type="button"
                 >
-                  <span aria-hidden="true" className="desktop-sidebar__disclosure">
-                    {isExpanded ? "▾" : "▸"}
-                  </span>
-                  <span aria-hidden="true" className="desktop-sidebar__entry-icon">
-                    📁
-                  </span>
-                  <span className="desktop-sidebar__entry-name">{entry.name}</span>
-                </button>
+                  <button
+                    aria-label={`${isExpanded ? "Collapse" : "Expand"} folder ${entry.name}`}
+                    className="desktop-sidebar__entry-button"
+                    data-selected={selectedDirectoryPath === entry.relativePath}
+                    draggable={false}
+                    onClick={() => handleToggleDirectory(entry)}
+                    onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                    type="button"
+                  >
+                    <span aria-hidden="true" className="desktop-sidebar__disclosure">
+                      {isExpanded ? "▾" : "▸"}
+                    </span>
+                    <span aria-hidden="true" className="desktop-sidebar__entry-icon">
+                      <FolderIcon />
+                    </span>
+                    <span className="desktop-sidebar__entry-name">{entry.name}</span>
+                  </button>
+                </div>
 
                 {childState?.status === "loading" ? (
                   <span className="desktop-sidebar__inline-status" role="status">
@@ -786,29 +808,33 @@ export function DesktopSidebar({
               aria-level={level}
               aria-selected={isActive}
               className={`desktop-sidebar__tree-item desktop-sidebar__tree-item--${entry.kind}`}
+              data-explorer-drop-path={apiParentPath(entry.relativePath)}
               key={entry.relativePath}
-              onDragOver={blockDropOnFile}
-              onDrop={blockDropOnFile}
               role="treeitem"
             >
-              <button
-                aria-busy={isOpening}
-                aria-current={isActive ? "page" : undefined}
-                className="desktop-sidebar__entry-button"
-                disabled={isChoosingFolder || isCreating || isImporting || isMutating || Boolean(openingPath)}
+              <div
+                className="desktop-sidebar__entry-row"
                 draggable={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
-                onClick={() => void handleOpenFile(entry)}
-                onContextMenu={(event) => handleEntryContextMenu(event, entry)}
                 onDragEnd={handleEntryDragEnd}
                 onDragStart={(event) => handleEntryDragStart(event, entry)}
-                title={entry.relativePath}
-                type="button"
               >
-                <span aria-hidden="true" className="desktop-sidebar__entry-icon">
-                  {iconForKind(entry.kind)}
-                </span>
-                <span className="desktop-sidebar__entry-name">{entry.name}</span>
-              </button>
+                <button
+                  aria-busy={isOpening}
+                  aria-current={isActive ? "page" : undefined}
+                  className="desktop-sidebar__entry-button"
+                  disabled={isChoosingFolder || isCreating || isImporting || isMutating || Boolean(openingPath)}
+                  draggable={false}
+                  onClick={() => void handleOpenFile(entry)}
+                  onContextMenu={(event) => handleEntryContextMenu(event, entry)}
+                  title={entry.relativePath}
+                  type="button"
+                >
+                  <span aria-hidden="true" className="desktop-sidebar__entry-icon">
+                    {iconForKind(entry.kind)}
+                  </span>
+                  <span className="desktop-sidebar__entry-name">{entry.name}</span>
+                </button>
+              </div>
             </li>
           );
         })}
@@ -972,9 +998,10 @@ export function DesktopSidebar({
           aria-busy={rootDirectory?.status === "loading" || isImporting}
           aria-label={`${root.name} contents`}
           className={dropTargetPath === "" ? "desktop-sidebar__root-drop-target" : undefined}
-          onDragLeave={(event) => handleExplorerDragLeave(event, "")}
-          onDragOver={(event) => handleExplorerDragOver(event, "")}
-          onDrop={(event) => void handleExplorerDrop(event, "")}
+          data-explorer-drop-path=""
+          onDragLeave={handleExplorerDragLeave}
+          onDragOverCapture={handleExplorerDragOver}
+          onDropCapture={(event) => void handleExplorerDrop(event)}
         >
           {rootDirectory?.status === "loading" && rootDirectory.entries.length === 0 ? (
             <p className="desktop-sidebar__status" role="status">
@@ -1039,6 +1066,24 @@ function iconForKind(kind: DesktopFileTarget["kind"]): string {
     case "pdf":
       return "PDF";
   }
+}
+
+function FolderIcon(): JSX.Element {
+  return (
+    <svg className="desktop-sidebar__folder-icon" viewBox="0 0 16 16" focusable="false">
+      <path d="M1.75 4.25h4l1.15 1.4h7.35v6.6H1.75z" />
+      <path d="M1.75 4.25v-1.5h4.1l1.2 1.5" />
+    </svg>
+  );
+}
+
+function readDropDestination(target: EventTarget | null): string | undefined {
+  if (!(target instanceof Element)) {
+    return undefined;
+  }
+
+  const dropTarget = target.closest<HTMLElement>("[data-explorer-drop-path]");
+  return dropTarget?.dataset.explorerDropPath;
 }
 
 function apiParentPath(relativePath: string): string {
