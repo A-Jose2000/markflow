@@ -313,12 +313,20 @@ select {
   font-size: 0.76rem;
 }
 
-.desktop-sidebar__entry-button[draggable="true"] {
+.desktop-sidebar__entry-row {
+  width: 100%;
+}
+
+.desktop-sidebar__entry-row[draggable="true"] {
   cursor: grab;
 }
 
-.desktop-sidebar__entry-button[draggable="true"]:active {
+.desktop-sidebar__entry-row[draggable="true"]:active {
   cursor: grabbing;
+}
+
+.desktop-sidebar__entry-row[draggable="true"] .desktop-sidebar__entry-button {
+  cursor: inherit;
 }
 
 .desktop-sidebar__tree-item:not(.desktop-sidebar__tree-item--directory) .desktop-sidebar__entry-button {
@@ -337,7 +345,7 @@ select {
   box-shadow: inset 2px 0 var(--accent);
 }
 
-.desktop-sidebar__tree-item--drop-target > .desktop-sidebar__entry-button {
+.desktop-sidebar__tree-item--drop-target > .desktop-sidebar__entry-row > .desktop-sidebar__entry-button {
   color: #ffffff;
   background: #343434;
   outline: 2px solid var(--accent);
@@ -361,6 +369,17 @@ select {
   color: #bdbdbd;
   font-size: 0.66rem;
   font-weight: 700;
+}
+
+.desktop-sidebar__folder-icon {
+  width: 1rem;
+  height: 1rem;
+  overflow: visible;
+  fill: rgb(189 189 189 / 12%);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.15;
 }
 
 .desktop-sidebar__entry-name {
