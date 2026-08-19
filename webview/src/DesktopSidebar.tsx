@@ -6,7 +6,8 @@ import {
   type DragEvent as ReactDragEvent,
   type FormEvent,
   type JSX,
-  type MouseEvent as ReactMouseEvent
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -17,20 +18,20 @@ import {
   type DesktopFolderRoot,
   type MarkflowDesktopApi
 } from "./desktopApi";
-import {
-  hasExplorerDragPayload,
-  readExplorerDragPayload,
-  writeExplorerDragPayload,
-  type ExplorerDragPayload
-} from "./explorerDragHandler";
-
 type DirectoryLoadStatus = "idle" | "loading" | "loaded" | "error";
 type CreateMode = "file" | "folder";
+const POINTER_DRAG_THRESHOLD = 5;
 
 interface EntryContextMenu {
   readonly entry: DesktopFolderEntry;
   readonly left: number;
   readonly top: number;
+}
+
+interface ExplorerPointerDrag {
+  readonly entry: DesktopFolderEntry;
+  readonly clientX: number;
+  readonly clientY: number;
 }
 
 interface DirectoryState {
@@ -83,7 +84,8 @@ export function DesktopSidebar({
   const [dropTargetPath, setDropTargetPath] = useState<string | undefined>();
   const [operationStatus, setOperationStatus] = useState<string | undefined>();
   const [sidebarError, setSidebarError] = useState<string | undefined>();
-  const draggedEntryRef = useRef<ExplorerDragPayload | undefined>(undefined);
+  const [pointerDrag, setPointerDrag] = useState<ExplorerPointerDrag | undefined>();
+  const suppressClickRef = useRef(false);
 
   const reportError = useCallback(
     (error: unknown) => {
@@ -601,45 +603,117 @@ export function DesktopSidebar({
     );
   }
 
-  function handleEntryDragStart(event: ReactDragEvent<HTMLElement>, entry: DesktopFolderEntry): void {
-    if (!root || isChoosingFolder || isCreating || isImporting || isMutating || openingPath) {
-      event.preventDefault();
+  function handleEntryPointerDown(event: ReactPointerEvent<HTMLElement>, entry: DesktopFolderEntry): void {
+    if (
+      !root ||
+      event.button !== 0 ||
+      !event.isPrimary ||
+      isChoosingFolder ||
+      isCreating ||
+      isImporting ||
+      isMutating ||
+      openingPath
+    ) {
       return;
     }
 
-    const payload = { rootId: root.id, entry } satisfies ExplorerDragPayload;
-    draggedEntryRef.current = payload;
-    writeExplorerDragPayload(event.dataTransfer, payload);
-    setContextMenu(undefined);
-    setOperationStatus(`Drag ${entry.name} onto a folder to move it`);
-  }
+    const pointerId = event.pointerId;
+    const sourceElement = event.currentTarget;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let started = false;
+    let destinationRelativePath: string | undefined;
 
-  function handleEntryDragEnd(): void {
-    draggedEntryRef.current = undefined;
-    setDropTargetPath(undefined);
-    setOperationStatus(undefined);
+    const removeListeners = () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointercancel", handlePointerCancel, true);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+
+    const finishPointerDrag = (cancelled: boolean) => {
+      removeListeners();
+
+      if (!started) {
+        return;
+      }
+
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+      document.body.classList.remove("desktop-explorer-is-dragging");
+      sourceElement.removeAttribute("data-dragging");
+      setPointerDrag(undefined);
+      setDropTargetPath(undefined);
+      setOperationStatus(undefined);
+
+      if (!cancelled && destinationRelativePath !== undefined) {
+        void handleMoveEntry(entry, destinationRelativePath);
+      }
+    };
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) {
+        return;
+      }
+
+      if (!started) {
+        const distance = Math.hypot(pointerEvent.clientX - startX, pointerEvent.clientY - startY);
+
+        if (distance < POINTER_DRAG_THRESHOLD) {
+          return;
+        }
+
+        started = true;
+        setContextMenu(undefined);
+        sourceElement.setAttribute("data-dragging", "true");
+        document.body.classList.add("desktop-explorer-is-dragging");
+        setOperationStatus(`Move ${entry.name} into a folder`);
+      }
+
+      pointerEvent.preventDefault();
+      const hoveredElement = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY);
+      const hoveredRelativePath = readDropDestination(hoveredElement);
+      destinationRelativePath =
+        hoveredRelativePath !== undefined && canMoveEntryTo(entry, hoveredRelativePath)
+          ? hoveredRelativePath
+          : undefined;
+      setDropTargetPath(destinationRelativePath);
+      setPointerDrag({ entry, clientX: pointerEvent.clientX, clientY: pointerEvent.clientY });
+    };
+
+    const handlePointerUp = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId) {
+        return;
+      }
+
+      if (started) {
+        pointerEvent.preventDefault();
+        pointerEvent.stopPropagation();
+      }
+
+      finishPointerDrag(false);
+    };
+
+    const handlePointerCancel = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) {
+        finishPointerDrag(true);
+      }
+    };
+
+    const handleWindowBlur = () => finishPointerDrag(true);
+
+    window.addEventListener("pointermove", handlePointerMove, { capture: true, passive: false });
+    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointercancel", handlePointerCancel, true);
+    window.addEventListener("blur", handleWindowBlur);
   }
 
   function handleExplorerDragOver(event: ReactDragEvent<HTMLElement>): void {
     const relativePath = readDropDestination(event.target);
 
     if (relativePath === undefined) {
-      return;
-    }
-
-    const dragPayload = draggedEntryRef.current;
-
-    if (dragPayload || hasExplorerDragPayload(event.dataTransfer)) {
-      event.preventDefault();
-      event.stopPropagation();
-      const canMove = Boolean(
-        dragPayload &&
-        root &&
-        dragPayload.rootId === root.id &&
-        canMoveEntryTo(dragPayload.entry, relativePath)
-      );
-      event.dataTransfer.dropEffect = canMove ? "move" : "none";
-      setDropTargetPath(canMove ? relativePath : undefined);
       return;
     }
 
@@ -671,23 +745,6 @@ export function DesktopSidebar({
     const relativePath = readDropDestination(event.target);
 
     if (relativePath === undefined) {
-      return;
-    }
-
-    const dragPayload = draggedEntryRef.current ?? readExplorerDragPayload(event.dataTransfer);
-
-    if (dragPayload) {
-      event.preventDefault();
-      event.stopPropagation();
-      draggedEntryRef.current = undefined;
-      setDropTargetPath(undefined);
-
-      if (dragPayload.rootId !== root.id) {
-        reportError(new Error("That item belongs to a different Explorer workspace."));
-        return;
-      }
-
-      await handleMoveEntry(dragPayload.entry, relativePath);
       return;
     }
 
@@ -756,15 +813,19 @@ export function DesktopSidebar({
               >
                 <div
                   className="desktop-sidebar__entry-row"
-                  draggable={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
-                  onDragEnd={handleEntryDragEnd}
-                  onDragStart={(event) => handleEntryDragStart(event, entry)}
+                  data-move-enabled={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
+                  onPointerDown={(event) => handleEntryPointerDown(event, entry)}
                 >
                   <button
                     aria-label={`${isExpanded ? "Collapse" : "Expand"} folder ${entry.name}`}
                     className="desktop-sidebar__entry-button"
                     data-selected={selectedDirectoryPath === entry.relativePath}
-                    draggable={false}
+                    onClickCapture={(event) => {
+                      if (suppressClickRef.current) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }
+                    }}
                     onClick={() => handleToggleDirectory(entry)}
                     onContextMenu={(event) => handleEntryContextMenu(event, entry)}
                     type="button"
@@ -814,16 +875,20 @@ export function DesktopSidebar({
             >
               <div
                 className="desktop-sidebar__entry-row"
-                draggable={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
-                onDragEnd={handleEntryDragEnd}
-                onDragStart={(event) => handleEntryDragStart(event, entry)}
+                data-move-enabled={!isChoosingFolder && !isCreating && !isImporting && !isMutating && !openingPath}
+                onPointerDown={(event) => handleEntryPointerDown(event, entry)}
               >
                 <button
                   aria-busy={isOpening}
                   aria-current={isActive ? "page" : undefined}
                   className="desktop-sidebar__entry-button"
                   disabled={isChoosingFolder || isCreating || isImporting || isMutating || Boolean(openingPath)}
-                  draggable={false}
+                  onClickCapture={(event) => {
+                    if (suppressClickRef.current) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }
+                  }}
                   onClick={() => void handleOpenFile(entry)}
                   onContextMenu={(event) => handleEntryContextMenu(event, entry)}
                   title={entry.relativePath}
@@ -1045,6 +1110,22 @@ export function DesktopSidebar({
               >
                 Move to Recycle Bin
               </button>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {pointerDrag
+        ? createPortal(
+            <div
+              aria-hidden="true"
+              className="desktop-sidebar__drag-preview"
+              style={{ left: pointerDrag.clientX + 14, top: pointerDrag.clientY + 14 }}
+            >
+              <span className="desktop-sidebar__entry-icon">
+                {pointerDrag.entry.kind === "directory" ? <FolderIcon /> : iconForKind(pointerDrag.entry.kind)}
+              </span>
+              <span>{pointerDrag.entry.name}</span>
             </div>,
             document.body
           )
