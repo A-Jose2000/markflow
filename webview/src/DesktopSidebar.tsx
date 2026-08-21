@@ -47,7 +47,8 @@ export interface DesktopSidebarProps {
   readonly onBeforeChooseFolder?: () => void | Promise<void>;
   readonly onBeforeCreate?: () => void | Promise<void>;
   readonly onBeforeMutate?: () => void | Promise<void>;
-  readonly onActiveEntryDeleted?: () => void;
+  readonly onEntryDeleted?: (rootId: string, entry: DesktopFolderEntry) => void;
+  readonly onEntryRelocated?: (rootId: string, result: DesktopEntryMutationResult) => void;
   readonly onFolderChanged?: (root: DesktopFolderRoot) => void;
   readonly onOpenMarkdown: (target: DesktopFileTarget) => void | Promise<void>;
   readonly onOpenMedia: (target: DesktopFileTarget) => void | Promise<void>;
@@ -60,7 +61,8 @@ export function DesktopSidebar({
   onBeforeChooseFolder,
   onBeforeCreate,
   onBeforeMutate,
-  onActiveEntryDeleted,
+  onEntryDeleted,
+  onEntryRelocated,
   onFolderChanged,
   onOpenMarkdown,
   onOpenMedia,
@@ -431,6 +433,7 @@ export function DesktopSidebar({
       setRenameTarget(undefined);
       setRenameName("");
       setOperationStatus(result.changed ? `Renamed to ${result.entry.name}` : `${result.entry.name} was unchanged`);
+      onEntryRelocated?.(root.id, result);
       await reopenRelocatedActiveTarget(result);
     } catch (error) {
       setOperationStatus(undefined);
@@ -460,6 +463,7 @@ export function DesktopSidebar({
       await refreshAfterMutation(result);
       relocateSelectedDirectory(result);
       setOperationStatus(result.changed ? `Moved ${result.entry.name}` : `${result.entry.name} is already there`);
+      onEntryRelocated?.(root.id, result);
       await reopenRelocatedActiveTarget(result);
     } catch (error) {
       setOperationStatus(undefined);
@@ -498,12 +502,7 @@ export function DesktopSidebar({
         setSelectedDirectoryPath(parentRelativePath);
       }
 
-      if (
-        activeTarget?.rootId === root.id &&
-        pathIsWithinOrEqual(entry.relativePath, activeTarget.relativePath)
-      ) {
-        onActiveEntryDeleted?.();
-      }
+      onEntryDeleted?.(root.id, entry);
 
       setRenameTarget(undefined);
       setRenameName("");

@@ -4,11 +4,14 @@ import { Component, type ErrorInfo, type JSX, type ReactNode, useEffect, useMemo
 import type { MDXEditorMethods } from "@mdxeditor/editor";
 import type { ExtensionToWebviewMessage } from "./markdownMessages";
 import { DesktopSidebar } from "./DesktopSidebar";
+import { DesktopTabs, desktopTabId } from "./DesktopTabs";
 import {
   createDesktopAutosave,
   getDesktopApi,
   type DesktopAutosaveController,
+  type DesktopEntryMutationResult,
   type DesktopFileTarget,
+  type DesktopFolderEntry,
   type DesktopFolderRoot,
   type DesktopMarkdownDocument,
   type DesktopMediaDocument,
@@ -27,6 +30,11 @@ type DesktopView =
   | { type: "markdown"; document: DesktopMarkdownDocument }
   | { type: "media"; document: DesktopMediaDocument };
 type DesktopSaveState = "idle" | "loading" | "saving" | "saved" | "error";
+
+interface DesktopScrollPosition {
+  left: number;
+  top: number;
+}
 
 interface CodexSelectionPayload {
   text: string;
@@ -68,6 +76,11 @@ export function App(): JSX.Element {
   const desktopAutosaveRef = useRef<DesktopAutosaveController | undefined>(undefined);
   const desktopCloseRequestRef = useRef<string | undefined>(undefined);
   const desktopNavigationGenerationRef = useRef(0);
+  const desktopNavigationPendingRef = useRef(false);
+  const desktopTabsRef = useRef<DesktopFileTarget[]>([]);
+  const desktopActiveTabIdRef = useRef<string | undefined>(undefined);
+  const desktopTabScrollPositionsRef = useRef(new Map<string, DesktopScrollPosition>());
+  const desktopScrollRestoreFramesRef = useRef<number[]>([]);
   const [markdown, setMarkdown] = useState("");
   const [isReady, setIsReady] = useState(false);
   const [readonly, setReadonly] = useState(false);
@@ -79,6 +92,9 @@ export function App(): JSX.Element {
   const [hasCodexSelection, setHasCodexSelection] = useState(false);
   const [desktopView, setDesktopView] = useState<DesktopView | undefined>();
   const [desktopActiveTarget, setDesktopActiveTarget] = useState<DesktopFileTarget | undefined>();
+  const [desktopTabs, setDesktopTabs] = useState<DesktopFileTarget[]>([]);
+  const [desktopActiveTabId, setDesktopActiveTabId] = useState<string | undefined>();
+  const [desktopNavigationPending, setDesktopNavigationPending] = useState(false);
   const [desktopSaveState, setDesktopSaveState] = useState<DesktopSaveState>("idle");
   const [desktopError, setDesktopError] = useState<string | undefined>();
   const webviewContext = useMemo(() => JSON.stringify({ markflowHasSelection: hasCodexSelection }), [hasCodexSelection]);
@@ -197,13 +213,54 @@ export function App(): JSX.Element {
     };
   }, [desktopApi]);
 
+  useEffect(
+    () => () => {
+      for (const frame of desktopScrollRestoreFramesRef.current) {
+        window.cancelAnimationFrame(frame);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     if (!desktopApi) {
       return;
     }
 
     const handleSaveShortcut = (event: KeyboardEvent) => {
-      if (event.key.toLocaleLowerCase() !== "s" || (!event.ctrlKey && !event.metaKey) || event.altKey) {
+      const key = event.key.toLocaleLowerCase();
+      const hasPrimaryModifier = event.ctrlKey || event.metaKey;
+
+      if (!hasPrimaryModifier || event.altKey) {
+        return;
+      }
+
+      if (key === "w") {
+        const activeTabId = desktopActiveTabIdRef.current;
+
+        if (activeTabId) {
+          event.preventDefault();
+          handleCloseDesktopTab(activeTabId);
+        }
+
+        return;
+      }
+
+      if (key === "tab" && event.ctrlKey) {
+        const tabs = desktopTabsRef.current;
+
+        if (tabs.length > 1) {
+          event.preventDefault();
+          const activeIndex = tabs.findIndex((tab) => desktopTabId(tab) === desktopActiveTabIdRef.current);
+          const direction = event.shiftKey ? -1 : 1;
+          const nextIndex = (Math.max(activeIndex, 0) + direction + tabs.length) % tabs.length;
+          handleActivateDesktopTab(tabs[nextIndex]);
+        }
+
+        return;
+      }
+
+      if (key !== "s") {
         return;
       }
 
@@ -547,94 +604,379 @@ export function App(): JSX.Element {
     }
   }
 
-  async function handleOpenDesktopMarkdown(target: DesktopFileTarget): Promise<void> {
-    if (!desktopApi) {
+  function commitDesktopTabs(
+    update: DesktopFileTarget[] | ((current: DesktopFileTarget[]) => DesktopFileTarget[])
+  ): DesktopFileTarget[] {
+    const nextTabs = typeof update === "function" ? update(desktopTabsRef.current) : update;
+    desktopTabsRef.current = nextTabs;
+    setDesktopTabs(nextTabs);
+    return nextTabs;
+  }
+
+  function commitDesktopActiveTab(tabId: string | undefined): void {
+    desktopActiveTabIdRef.current = tabId;
+    setDesktopActiveTabId(tabId);
+  }
+
+  function getDesktopScrollElement(): HTMLElement | null {
+    if (rawEditorRef.current) {
+      return rawEditorRef.current;
+    }
+
+    const mediaScroller = appShellRef.current?.querySelector<HTMLElement>(".desktop-media-viewer__canvas");
+
+    if (mediaScroller) {
+      return mediaScroller;
+    }
+
+    const richEditor = appShellRef.current?.querySelector<HTMLElement>(".rich-editor-shell .markflow-editor");
+    return richEditor?.parentElement ?? null;
+  }
+
+  function rememberDesktopTabScrollPosition(tabId = desktopActiveTabIdRef.current): void {
+    if (!tabId) {
       return;
     }
 
-    const navigationGeneration = ++desktopNavigationGenerationRef.current;
-    await flushDesktopChanges();
+    const scrollElement = getDesktopScrollElement();
 
-    if (navigationGeneration !== desktopNavigationGenerationRef.current) {
+    if (!scrollElement) {
       return;
     }
 
-    const document = await desktopApi.openMarkdown({
-      rootId: target.rootId,
-      relativePath: target.relativePath
-    });
-
-    if (navigationGeneration !== desktopNavigationGenerationRef.current) {
-      return;
-    }
-
-    desktopAutosaveRef.current?.trackDocument(document);
-    applyingExternalUpdateRef.current = true;
-    setEditorError(undefined);
-    setDesktopError(undefined);
-    setDesktopSaveState("saved");
-    setDesktopActiveTarget(target);
-    setDesktopView({ type: "markdown", document });
-    setResourcePath(document.displayPath);
-    commitMarkdownState(document.markdown);
-    editorRef.current?.setMarkdown(document.markdown);
-
-    window.requestAnimationFrame(() => {
-      applyingExternalUpdateRef.current = false;
+    desktopTabScrollPositionsRef.current.set(tabId, {
+      left: scrollElement.scrollLeft,
+      top: scrollElement.scrollTop
     });
   }
 
-  async function handleOpenDesktopMedia(target: DesktopFileTarget): Promise<void> {
-    if (!desktopApi) {
-      return;
+  function scheduleDesktopTabScrollRestore(tabId: string): void {
+    for (const frame of desktopScrollRestoreFramesRef.current) {
+      window.cancelAnimationFrame(frame);
     }
 
-    const navigationGeneration = ++desktopNavigationGenerationRef.current;
-    await flushDesktopChanges();
+    desktopScrollRestoreFramesRef.current = [];
+    const firstFrame = window.requestAnimationFrame(() => {
+      const secondFrame = window.requestAnimationFrame(() => {
+        desktopScrollRestoreFramesRef.current = [];
 
-    if (navigationGeneration !== desktopNavigationGenerationRef.current) {
-      return;
-    }
+        if (desktopActiveTabIdRef.current !== tabId) {
+          return;
+        }
 
-    const document = await desktopApi.openMedia({
-      rootId: target.rootId,
-      relativePath: target.relativePath
+        const scrollElement = getDesktopScrollElement();
+        const position = desktopTabScrollPositionsRef.current.get(tabId) ?? { left: 0, top: 0 };
+
+        if (scrollElement) {
+          scrollElement.scrollLeft = position.left;
+          scrollElement.scrollTop = position.top;
+        }
+      });
+
+      desktopScrollRestoreFramesRef.current.push(secondFrame);
     });
 
-    if (navigationGeneration !== desktopNavigationGenerationRef.current) {
+    desktopScrollRestoreFramesRef.current.push(firstFrame);
+  }
+
+  function registerDesktopTab(target: DesktopFileTarget): void {
+    const tabId = desktopTabId(target);
+    commitDesktopTabs((current) => {
+      const existingIndex = current.findIndex((tab) => desktopTabId(tab) === tabId);
+
+      if (existingIndex < 0) {
+        return [...current, target];
+      }
+
+      return current.map((tab, index) => (index === existingIndex ? target : tab));
+    });
+    commitDesktopActiveTab(tabId);
+  }
+
+  function clearDesktopView(resourcePath?: string): void {
+    desktopAutosaveRef.current?.dispose();
+    clearPendingEdit();
+    setDesktopView(undefined);
+    setDesktopActiveTarget(undefined);
+    setDesktopSaveState("idle");
+    setDesktopError(undefined);
+    setResourcePath(resourcePath);
+    commitMarkdownState("");
+  }
+
+  async function loadDesktopTarget(
+    target: DesktopFileTarget,
+    navigationGeneration: number,
+    registerTab: boolean
+  ): Promise<boolean> {
+    if (!desktopApi) {
+      return false;
+    }
+
+    if (target.kind === "markdown") {
+      setDesktopSaveState("loading");
+      const document = await desktopApi.openMarkdown({
+        rootId: target.rootId,
+        relativePath: target.relativePath
+      });
+
+      if (navigationGeneration !== desktopNavigationGenerationRef.current) {
+        return false;
+      }
+
+      desktopAutosaveRef.current?.trackDocument(document);
+      applyingExternalUpdateRef.current = true;
+      setEditorError(undefined);
+      setDesktopError(undefined);
+      setDesktopSaveState("saved");
+      setDesktopActiveTarget(target);
+      setDesktopView({ type: "markdown", document });
+      setResourcePath(document.displayPath);
+      commitMarkdownState(document.markdown);
+      editorRef.current?.setMarkdown(document.markdown);
+
+      window.requestAnimationFrame(() => {
+        applyingExternalUpdateRef.current = false;
+      });
+    } else {
+      const document = await desktopApi.openMedia({
+        rootId: target.rootId,
+        relativePath: target.relativePath
+      });
+
+      if (navigationGeneration !== desktopNavigationGenerationRef.current) {
+        return false;
+      }
+
+      desktopAutosaveRef.current?.dispose();
+      setDesktopError(undefined);
+      setDesktopSaveState("idle");
+      setDesktopActiveTarget(target);
+      setDesktopView({ type: "media", document });
+      setResourcePath(document.displayPath);
+    }
+
+    if (registerTab) {
+      registerDesktopTab(target);
+    } else {
+      commitDesktopActiveTab(desktopTabId(target));
+    }
+
+    scheduleDesktopTabScrollRestore(desktopTabId(target));
+
+    return true;
+  }
+
+  async function navigateDesktopTarget(
+    target: DesktopFileTarget,
+    options: { readonly flush?: boolean; readonly registerTab?: boolean } = {}
+  ): Promise<void> {
+    if (!desktopApi || desktopNavigationPendingRef.current) {
       return;
     }
 
-    desktopAutosaveRef.current?.dispose();
-    setDesktopError(undefined);
-    setDesktopSaveState("idle");
-    setDesktopActiveTarget(target);
-    setDesktopView({ type: "media", document });
-    setResourcePath(document.displayPath);
+    rememberDesktopTabScrollPosition();
+    desktopNavigationPendingRef.current = true;
+    setDesktopNavigationPending(true);
+    const navigationGeneration = ++desktopNavigationGenerationRef.current;
+
+    try {
+      if (options.flush !== false) {
+        await flushDesktopChanges();
+      }
+
+      if (navigationGeneration !== desktopNavigationGenerationRef.current) {
+        return;
+      }
+
+      await loadDesktopTarget(target, navigationGeneration, options.registerTab !== false);
+    } finally {
+      if (navigationGeneration === desktopNavigationGenerationRef.current) {
+        desktopNavigationPendingRef.current = false;
+        setDesktopNavigationPending(false);
+      }
+    }
+  }
+
+  async function handleOpenDesktopMarkdown(target: DesktopFileTarget): Promise<void> {
+    await navigateDesktopTarget(target);
+  }
+
+  async function handleOpenDesktopMedia(target: DesktopFileTarget): Promise<void> {
+    await navigateDesktopTarget(target);
+  }
+
+  function handleActivateDesktopTab(target: DesktopFileTarget): void {
+    if (desktopTabId(target) === desktopActiveTabIdRef.current || desktopNavigationPendingRef.current) {
+      return;
+    }
+
+    void navigateDesktopTarget(target, { registerTab: false }).catch((error: unknown) => {
+      setDesktopSaveState("error");
+      setDesktopError(getDesktopErrorMessage(error instanceof Error ? error : new Error("The tab could not open.")));
+    });
+  }
+
+  function handleReorderDesktopTab(sourceTabId: string, insertionIndex: number): void {
+    commitDesktopTabs((current) => {
+      const sourceIndex = current.findIndex((tab) => desktopTabId(tab) === sourceTabId);
+
+      if (sourceIndex < 0) {
+        return current;
+      }
+
+      const nextTabs = [...current];
+      const [sourceTab] = nextTabs.splice(sourceIndex, 1);
+      nextTabs.splice(Math.max(0, Math.min(insertionIndex, nextTabs.length)), 0, sourceTab);
+      return nextTabs;
+    });
+  }
+
+  function handleCloseDesktopTab(tabId: string): void {
+    if (desktopNavigationPendingRef.current) {
+      return;
+    }
+
+    const currentTabs = desktopTabsRef.current;
+    const closeIndex = currentTabs.findIndex((tab) => desktopTabId(tab) === tabId);
+
+    if (closeIndex < 0) {
+      return;
+    }
+
+    if (tabId !== desktopActiveTabIdRef.current) {
+      desktopTabScrollPositionsRef.current.delete(tabId);
+      commitDesktopTabs(currentTabs.filter((tab) => desktopTabId(tab) !== tabId));
+      return;
+    }
+
+    rememberDesktopTabScrollPosition(tabId);
+    void (async () => {
+      desktopNavigationPendingRef.current = true;
+      setDesktopNavigationPending(true);
+      const navigationGeneration = ++desktopNavigationGenerationRef.current;
+
+      try {
+        await flushDesktopChanges();
+        const nextTabs = desktopTabsRef.current.filter((tab) => desktopTabId(tab) !== tabId);
+        const nextTarget = nextTabs[Math.min(closeIndex, nextTabs.length - 1)];
+
+        if (nextTarget) {
+          await loadDesktopTarget(nextTarget, navigationGeneration, false);
+          commitDesktopTabs(nextTabs);
+          desktopTabScrollPositionsRef.current.delete(tabId);
+        } else {
+          desktopTabScrollPositionsRef.current.delete(tabId);
+          commitDesktopTabs([]);
+          commitDesktopActiveTab(undefined);
+          clearDesktopView();
+        }
+      } catch (error) {
+        setDesktopSaveState("error");
+        setDesktopError(
+          getDesktopErrorMessage(error instanceof Error ? error : new Error("The tab could not close safely."))
+        );
+      } finally {
+        if (navigationGeneration === desktopNavigationGenerationRef.current) {
+          desktopNavigationPendingRef.current = false;
+          setDesktopNavigationPending(false);
+        }
+      }
+    })();
   }
 
   function handleDesktopFolderChanged(root: DesktopFolderRoot): void {
     desktopNavigationGenerationRef.current += 1;
-    desktopAutosaveRef.current?.dispose();
-    clearPendingEdit();
-    setDesktopView(undefined);
-    setDesktopActiveTarget(undefined);
-    setDesktopSaveState("idle");
-    setDesktopError(undefined);
-    setResourcePath(root.displayPath);
-    commitMarkdownState("");
+    desktopNavigationPendingRef.current = false;
+    setDesktopNavigationPending(false);
+    desktopTabScrollPositionsRef.current.clear();
+    commitDesktopTabs([]);
+    commitDesktopActiveTab(undefined);
+    clearDesktopView(root.displayPath);
   }
 
-  function handleDesktopActiveEntryDeleted(): void {
+  function handleDesktopEntryRelocated(rootId: string, result: DesktopEntryMutationResult): void {
+    const previousActiveTabId = desktopActiveTabIdRef.current;
+    let nextActiveTabId = previousActiveTabId;
+    const scrollPositions = desktopTabScrollPositionsRef.current;
+
+    for (const target of desktopTabsRef.current) {
+      if (target.rootId !== rootId || !desktopPathIsWithinOrEqual(result.previousRelativePath, target.relativePath)) {
+        continue;
+      }
+
+      const previousTabId = desktopTabId(target);
+      const position = scrollPositions.get(previousTabId);
+
+      if (position) {
+        scrollPositions.delete(previousTabId);
+        scrollPositions.set(desktopTabId(relocateDesktopTarget(target, result)), position);
+      }
+    }
+
+    const nextTabs = commitDesktopTabs((current) =>
+      current.map((target) => {
+        if (target.rootId !== rootId || !desktopPathIsWithinOrEqual(result.previousRelativePath, target.relativePath)) {
+          return target;
+        }
+
+        const relocatedTarget = relocateDesktopTarget(target, result);
+
+        if (desktopTabId(target) === previousActiveTabId) {
+          nextActiveTabId = desktopTabId(relocatedTarget);
+        }
+
+        return relocatedTarget;
+      })
+    );
+
+    if (nextTabs.length > 0) {
+      commitDesktopActiveTab(nextActiveTabId);
+    }
+  }
+
+  function handleDesktopEntryDeleted(rootId: string, entry: DesktopFolderEntry): void {
+    const currentTabs = desktopTabsRef.current;
+    const activeTabId = desktopActiveTabIdRef.current;
+    const activeIndex = currentTabs.findIndex((tab) => desktopTabId(tab) === activeTabId);
+    const activeWasDeleted = currentTabs.some(
+      (target) =>
+        desktopTabId(target) === activeTabId &&
+        target.rootId === rootId &&
+        desktopPathIsWithinOrEqual(entry.relativePath, target.relativePath)
+    );
+    const remainingTabs = currentTabs.filter(
+      (target) =>
+        target.rootId !== rootId || !desktopPathIsWithinOrEqual(entry.relativePath, target.relativePath)
+    );
+
+    for (const target of currentTabs) {
+      if (!remainingTabs.includes(target)) {
+        desktopTabScrollPositionsRef.current.delete(desktopTabId(target));
+      }
+    }
+
+    commitDesktopTabs(remainingTabs);
+
+    if (!activeWasDeleted) {
+      return;
+    }
+
     desktopNavigationGenerationRef.current += 1;
     desktopAutosaveRef.current?.dispose();
-    clearPendingEdit();
-    setDesktopView(undefined);
-    setDesktopActiveTarget(undefined);
-    setDesktopSaveState("idle");
-    setDesktopError(undefined);
-    setResourcePath(undefined);
-    commitMarkdownState("");
+    const nextTarget = remainingTabs[Math.min(Math.max(activeIndex, 0), remainingTabs.length - 1)];
+
+    if (!nextTarget) {
+      commitDesktopActiveTab(undefined);
+      clearDesktopView();
+      return;
+    }
+
+    commitDesktopActiveTab(desktopTabId(nextTarget));
+    clearDesktopView();
+    void navigateDesktopTarget(nextTarget, { flush: false, registerTab: false }).catch((error: unknown) => {
+      setDesktopError(getDesktopErrorMessage(error instanceof Error ? error : new Error("The next tab could not open.")));
+    });
   }
 
   async function handleDiscardAndReloadDesktopMarkdown(): Promise<void> {
@@ -760,10 +1102,11 @@ export function App(): JSX.Element {
         <DesktopSidebar
           activeTarget={desktopActiveTarget}
           api={desktopApi}
-          onActiveEntryDeleted={handleDesktopActiveEntryDeleted}
           onBeforeChooseFolder={flushDesktopChanges}
           onBeforeCreate={flushDesktopChanges}
           onBeforeMutate={flushDesktopChanges}
+          onEntryDeleted={handleDesktopEntryDeleted}
+          onEntryRelocated={handleDesktopEntryRelocated}
           onError={(error) => setDesktopError(error.message)}
           onFolderChanged={handleDesktopFolderChanged}
           onOpenMarkdown={handleOpenDesktopMarkdown}
@@ -772,6 +1115,17 @@ export function App(): JSX.Element {
       ) : null}
 
       <section className="app-workspace">
+        {desktopApi ? (
+          <DesktopTabs
+            activeTabId={desktopActiveTabId}
+            disabled={desktopNavigationPending}
+            onActivate={handleActivateDesktopTab}
+            onClose={handleCloseDesktopTab}
+            onReorder={handleReorderDesktopTab}
+            tabs={desktopTabs}
+          />
+        ) : null}
+
         <header className="app-topbar">
           <div className="topbar-actions">
             {!desktopApi || desktopView?.type === "markdown" ? (
@@ -905,6 +1259,31 @@ function getDesktopStatusLabel(view: DesktopView | undefined, saveState: Desktop
 
 function getDesktopErrorMessage(error: DesktopSaveFailure | Error): string {
   return error instanceof Error ? error.message : error.message;
+}
+
+function desktopPathIsWithinOrEqual(parentPath: string, candidatePath: string): boolean {
+  return candidatePath === parentPath || candidatePath.startsWith(`${parentPath}/`);
+}
+
+function relocateDesktopTarget(
+  target: DesktopFileTarget,
+  result: DesktopEntryMutationResult
+): DesktopFileTarget {
+  const relativePath = `${result.entry.relativePath}${target.relativePath.slice(result.previousRelativePath.length)}`;
+
+  if (target.relativePath === result.previousRelativePath && result.entry.kind !== "directory") {
+    return {
+      rootId: target.rootId,
+      ...result.entry
+    };
+  }
+
+  const separatorIndex = relativePath.lastIndexOf("/");
+  return {
+    ...target,
+    relativePath,
+    name: separatorIndex < 0 ? relativePath : relativePath.slice(separatorIndex + 1)
+  };
 }
 
 function areCodexSelectionsEqual(

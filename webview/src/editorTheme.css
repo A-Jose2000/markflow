@@ -72,6 +72,121 @@ select {
   overflow: hidden;
 }
 
+.desktop-tabs {
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 2.35rem;
+  overflow: hidden;
+  background: #1d1d1d;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.desktop-tabs__scroller {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-color: #555555 #1d1d1d;
+  scrollbar-width: thin;
+}
+
+.desktop-tab {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.75rem;
+  flex: 0 1 13.5rem;
+  min-width: 7.5rem;
+  max-width: 16rem;
+  height: 100%;
+  color: #adadad;
+  background: #242424;
+  border-right: 1px solid #3d3d3d;
+  user-select: none;
+  touch-action: none;
+}
+
+.desktop-tab[data-active="true"] {
+  z-index: 1;
+  color: #f1f1f1;
+  background: #2b2b2b;
+  box-shadow: inset 0 -2px var(--accent);
+}
+
+.desktop-tab[data-dragging="true"] {
+  z-index: 2;
+  opacity: 0.72;
+  box-shadow: inset 0 0 0 1px #686868;
+}
+
+.desktop-tab__activate,
+.desktop-tab__close {
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  cursor: default;
+  background: transparent;
+  border: 0;
+}
+
+.desktop-tab__activate {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr);
+  gap: 0.28rem;
+  align-items: center;
+  padding-left: 0.5rem;
+  overflow: hidden;
+  text-align: left;
+}
+
+.desktop-tab__kind {
+  display: inline-grid;
+  place-items: center;
+  color: #bcbcbc;
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+
+.desktop-tab__kind--audio,
+.desktop-tab__kind--video {
+  font-size: 0.72rem;
+}
+
+.desktop-tab__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.73rem;
+}
+
+.desktop-tab__close {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: auto;
+  border-radius: 0.3rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.desktop-tab__close:hover,
+.desktop-tab__close:focus-visible {
+  color: #ffffff;
+  background: #444444;
+  outline: 0;
+}
+
+.desktop-tab button:disabled {
+  cursor: wait;
+}
+
+body.desktop-tabs-is-dragging,
+body.desktop-tabs-is-dragging * {
+  cursor: move !important;
+  user-select: none !important;
+}
+
 .app-shell--loading {
   display: grid;
   gap: 0.85rem;
@@ -1082,6 +1197,16 @@ body.desktop-explorer-is-dragging * {
   opacity: 1;
 }
 
+.markflow-block-controls[data-selected="true"] {
+  opacity: 1;
+}
+
+.markflow-block-controls[data-selected="true"] .markflow-block-drag-handle {
+  color: #ffffff;
+  background: #383838;
+  border-color: var(--accent);
+}
+
 .markflow-block-add-button,
 .markflow-block-drag-handle {
   display: inline-grid;
@@ -1111,7 +1236,37 @@ body.desktop-explorer-is-dragging * {
   position: absolute;
   inset: 0;
   z-index: 6;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.markflow-block-selection-gutter {
+  position: absolute;
+  z-index: 1;
+  cursor: crosshair;
+  pointer-events: auto;
+}
+
+.markflow-block-selection-marquee {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  background: rgb(88 166 255 / 0.1);
+  border: 1px solid rgb(88 166 255 / 0.8);
+  border-radius: 0.25rem;
+}
+
+.markflow-editor [data-markflow-block-selected="true"] {
+  background-color: rgb(88 166 255 / 0.08) !important;
+  border-radius: 0.2rem;
+  outline: 1px solid rgb(88 166 255 / 0.7);
+  outline-offset: 3px;
+}
+
+body.markflow-blocks-are-selecting,
+body.markflow-blocks-are-selecting * {
+  cursor: crosshair !important;
+  user-select: none !important;
 }
 
 .markflow-block-add-button:hover,
