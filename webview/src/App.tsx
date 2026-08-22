@@ -22,6 +22,7 @@ import { markflowMathPlugin } from "./mathPlugin";
 import { getVsCodeApi } from "./vscodeApi";
 
 const DEFAULT_DEBOUNCE_MS = 250;
+const MARKFLOW_ICON_URL = new URL("./assets/markflow-icon.png", import.meta.url).href;
 
 export type MdxEditorModule = typeof import("@mdxeditor/editor");
 type EditorMode = "raw" | "rich";
@@ -1186,9 +1187,7 @@ export function App(): JSX.Element {
         <section className="editor-stage">
           {desktopApi && !desktopView ? (
             <section className="desktop-welcome" aria-label="Markflow desktop welcome">
-              <div className="desktop-welcome__icon" aria-hidden="true">
-                M↓
-              </div>
+              <img alt="" aria-hidden="true" className="desktop-welcome__icon" src={MARKFLOW_ICON_URL} />
               <h1>Open a folder to start</h1>
               <p>Choose a Markdown or media file from the Explorer. Markdown changes are saved automatically.</p>
             </section>

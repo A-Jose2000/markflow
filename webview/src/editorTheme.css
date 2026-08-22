@@ -703,16 +703,11 @@ body.desktop-explorer-is-dragging * {
 }
 
 .desktop-welcome__icon {
-  display: grid;
-  place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  color: #d8d8d8;
-  background: #292929;
-  border: 1px solid #484848;
-  border-radius: 0.85rem;
-  font-size: 1.05rem;
-  font-weight: 750;
+  display: block;
+  width: 5rem;
+  height: 5rem;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
 .desktop-welcome h1,

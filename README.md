@@ -1,4 +1,8 @@
-# Markflow
+<p align="center">
+  <img src="images/markflow-icon.png" alt="Markflow logo" width="144" />
+</p>
+
+<h1 align="center">Markflow</h1>
 
 A portable rich Markdown editor for local files in VS Code.
 

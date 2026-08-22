@@ -2,9 +2,14 @@
   "name": "markflow",
   "displayName": "Markflow",
   "description": "A portable rich Markdown editor for local files in VS Code.",
+  "icon": "images/markflow-icon.png",
   "version": "0.1.13",
   "publisher": "ajose",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/A-Jose2000/markflow.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },

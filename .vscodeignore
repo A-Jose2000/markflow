@@ -1,9 +1,12 @@
 .vscode/**
 .gitignore
 src/**
+assets/**
 webview/src/**
 webview/node_modules/**
 webview/index.html
+webview/public/**
+webview/tests/**
 webview/dist/index.html
 webview/package-lock.json
 webview/package.json

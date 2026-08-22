@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Keyboard,
   Linking,
   Pressable,
@@ -241,13 +242,21 @@ function MarkflowMobileApp() {
       <StatusBar barStyle="light-content" backgroundColor={colors.topbarBg} />
       <View style={styles.shell}>
         <View style={styles.topbar}>
-          <View style={styles.titleBlock}>
-            <Text numberOfLines={1} style={styles.appTitle}>
-              Markflow
-            </Text>
-            <Text numberOfLines={1} style={styles.documentStatus}>
-              {documentStatus}
-            </Text>
+          <View style={styles.brandLockup}>
+            <Image
+              accessibilityIgnoresInvertColors
+              accessible={false}
+              source={require("./assets/brand-icon.png")}
+              style={styles.brandIcon}
+            />
+            <View style={styles.titleBlock}>
+              <Text numberOfLines={1} style={styles.appTitle}>
+                Markflow
+              </Text>
+              <Text numberOfLines={1} style={styles.documentStatus}>
+                {documentStatus}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.modeSwitcher} accessibilityRole="tablist">
@@ -461,6 +470,19 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "800",
     lineHeight: 24
+  },
+  brandIcon: {
+    borderRadius: 7,
+    flexShrink: 0,
+    height: 32,
+    width: 32
+  },
+  brandLockup: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 9,
+    minWidth: 0
   },
   clearChip: {
     alignItems: "center",

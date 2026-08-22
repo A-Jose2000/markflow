@@ -92,6 +92,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken
   ): Promise<void> {
+    webviewPanel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "images", "markflow-icon.png");
     webviewPanel.webview.options = {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "webview", "dist")]

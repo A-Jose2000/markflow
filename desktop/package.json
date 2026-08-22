@@ -37,6 +37,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "icon.ico",
       "dist/renderer/**"
     ],
     "win": {

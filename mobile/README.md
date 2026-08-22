@@ -37,7 +37,12 @@ The APK is written to `android/app/build/outputs/apk/release/app-release.apk`.
 - `GitHub` validates and stores a token on the device so private repository Markdown can load through GitHub's contents API. Use a fine-grained personal access token with `Contents: read` access for the repositories you want to read.
 - Markdown links to other `.md` files open inside Markflow when possible; other links open through Android.
 
-## App Icon
+## Brand Assets
 
-The launcher icon source files live in `assets/markflow-icon.svg` and `assets/markflow-adaptive-foreground.svg`.
-The generated PNGs used by Expo are `assets/icon.png` and `assets/adaptive-icon.png`.
+The PNG assets under `assets/` cover each Android and in-app surface:
+
+- `icon.png` is the standard launcher icon.
+- `adaptive-icon.png` is the transparent Android adaptive-icon foreground.
+- `monochrome-icon.png` supplies Android's themed icon.
+- `splash-icon.png` is shown on the black launch screen.
+- `brand-icon.png` is the compact mark used in the app header.

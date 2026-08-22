@@ -23,6 +23,7 @@ const CLOSE_RESPONSE_TIMEOUT_MS = 15_000;
 const RENDERER_ROOT_PATH = path.join(__dirname, "dist", "renderer");
 const BUNDLED_RENDERER_URL = `${APP_SCHEME}://bundle/index.html`;
 const PRELOAD_PATH = path.join(__dirname, "preload.cjs");
+const APP_ICON_PATH = path.join(__dirname, "icon.ico");
 
 const BUNDLED_RENDERER_CSP = [
   "default-src 'self'",
@@ -170,6 +171,7 @@ async function createMainWindow() {
     show: false,
     backgroundColor: "#191919",
     autoHideMenuBar: true,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: PRELOAD_PATH,
       nodeIntegration: false,
