@@ -1165,6 +1165,8 @@ body.desktop-explorer-is-dragging * {
 }
 
 .markflow-editor {
+  --lexical-indent-base-value: 40px;
+  --markflow-block-indent-width: 40px;
   position: relative;
   width: min(100%, 58rem);
   min-height: 100%;
@@ -1174,6 +1176,15 @@ body.desktop-explorer-is-dragging * {
   color: var(--text-main);
   caret-color: var(--accent);
   line-height: 1.7;
+}
+
+.markflow-editor [data-markflow-outline-offset="true"] {
+  max-width: calc(100% - var(--markflow-outline-offset));
+  margin-inline-start: var(--markflow-outline-offset);
+}
+
+.markflow-editor [data-markflow-outline-element-indent="true"] {
+  padding-inline-start: var(--markflow-outline-offset) !important;
 }
 
 .markflow-block-controls {
@@ -1916,6 +1927,8 @@ body.markflow-blocks-are-selecting * {
 
 
   .markflow-editor {
+    --lexical-indent-base-value: 20px;
+    --markflow-block-indent-width: 20px;
     padding: 1rem 0.9rem 4rem 4rem;
   }
 
