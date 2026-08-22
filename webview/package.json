@@ -7,6 +7,7 @@
     "build": "vite build",
     "build:desktop": "vite build --config vite.desktop.config.ts",
     "dev": "vite build --watch",
+    "test": "node --test tests/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -91,7 +91,7 @@
     "typecheck:webview": "npm --prefix webview run typecheck",
     "watch": "concurrently \"tsc -watch -p tsconfig.json\" \"npm --prefix webview run dev\"",
     "package": "node scripts/package-extension.mjs",
-    "check": "npm run typecheck:webview && npm run build && npm run build:desktop && npm --prefix desktop run check"
+    "check": "npm --prefix webview test && npm run typecheck:webview && npm run build && npm run build:desktop && npm --prefix desktop run check"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

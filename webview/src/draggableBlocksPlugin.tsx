@@ -1,6 +1,13 @@
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { $createHorizontalRuleNode } from "@lexical/react/LexicalHorizontalRuleNode";
-import { $createListItemNode, $isListItemNode, $isListNode, type ListItemNode } from "@lexical/list";
+import {
+  $createListItemNode,
+  $createListNode,
+  $isListItemNode,
+  $isListNode,
+  type ListItemNode,
+  type ListType
+} from "@lexical/list";
 import type { RealmPlugin } from "@mdxeditor/editor";
 import type { Realm } from "@mdxeditor/gurx";
 import { $createHeadingNode, $createQuoteNode, $isQuoteNode } from "@lexical/rich-text";
@@ -33,14 +40,25 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  getUnitKeyInScope,
+  resolveHierarchicalBlockSelection,
+  type HierarchySelectionModel
+} from "./blockSelectionModel";
+
 type MdxEditorModule = typeof import("@mdxeditor/editor");
 type DropPlacement = "before" | "after";
 
 interface BlockHandle {
   key: NodeKey;
-  isContainer: boolean;
+  depth: number;
+  hotBottom: number;
+  hotLeft: number;
+  hotRight: number;
+  hotTop: number;
   isListItem: boolean;
   left: number;
+  rowKey: NodeKey;
   top: number;
 }
 
@@ -54,9 +72,46 @@ interface BlockScope {
   units: BlockUnit[];
 }
 
+interface LogicalBlockUnit extends BlockUnit {
+  depth: number;
+  hasOwnRow: boolean;
+  kind: "block" | "container" | "list-item";
+  listStart?: number;
+  listType?: ListType;
+  physicalParentKey: NodeKey;
+  rowKey: NodeKey;
+  scopeKey: NodeKey;
+}
+
+interface LogicalBlockScope {
+  hostKey?: NodeKey;
+  key: NodeKey;
+  parentUnitKey?: NodeKey;
+  structuralListRun?: {
+    outerListKey: NodeKey;
+    wrapperKeys: NodeKey[];
+  };
+  unitKeys: NodeKey[];
+  units: LogicalBlockUnit[];
+}
+
+interface LogicalBlockTree extends HierarchySelectionModel {
+  rootScopeKey: NodeKey;
+  scopes: Map<NodeKey, LogicalBlockScope>;
+  units: Map<NodeKey, LogicalBlockUnit>;
+}
+
+interface BlockSelectionHighlight {
+  height: number;
+  key: NodeKey;
+  left: number;
+  top: number;
+  width: number;
+}
+
 interface DraggedBlocks {
-  parentKey: NodeKey;
   keys: NodeKey[];
+  scopeKey: NodeKey;
   sourceKey: NodeKey;
 }
 
@@ -126,7 +181,9 @@ interface DropIndicator {
 }
 
 const BLOCK_DRAG_DATA_FORMAT = "application/x-markflow-block-key";
-const BLOCK_HANDLE_HEIGHT = 25;
+const BLOCK_HANDLE_HEIGHT = 20;
+const BLOCK_HANDLE_PAIR_WIDTH = 42;
+const BLOCK_HANDLE_GAP = 6;
 const BLOCK_DRAG_SCROLL_EDGE = 64;
 const BLOCK_DRAG_SCROLL_MAX_SPEED = 900;
 
@@ -240,12 +297,17 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
   const nativeDragEndCleanupRef = useRef<(() => void) | undefined>(undefined);
   const commandMenuRef = useRef<CommandMenuState | undefined>(undefined);
   const ignoredSlashMarkerRef = useRef<SlashMarker | undefined>(undefined);
+  const handlesRef = useRef<BlockHandle[]>([]);
   const selectedBlockKeysRef = useRef<NodeKey[]>([]);
-  const selectedBlockElementsRef = useRef(new Set<HTMLElement>());
+  const selectedBlockScopeKeyRef = useRef<NodeKey | undefined>(undefined);
   const [rootElement, setRootElement] = useState<HTMLElement | undefined>();
   const [isEditable, setIsEditable] = useState(editor.isEditable());
   const [handles, setHandles] = useState<BlockHandle[]>([]);
+  const [hoveredHandleKey, setHoveredHandleKey] = useState<NodeKey | undefined>();
+  const [focusedHandleKey, setFocusedHandleKey] = useState<NodeKey | undefined>();
   const [selectedBlockKeys, setSelectedBlockKeys] = useState<NodeKey[]>([]);
+  const [selectedBlockScopeKey, setSelectedBlockScopeKey] = useState<NodeKey | undefined>();
+  const [selectionHighlights, setSelectionHighlights] = useState<BlockSelectionHighlight[]>([]);
   const [selectionGutter, setSelectionGutter] = useState<SelectionGutter | undefined>();
   const [selectionMarquee, setSelectionMarquee] = useState<SelectionMarquee | undefined>();
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | undefined>();
@@ -284,35 +346,22 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
     );
   }, [commandMenu?.source, commandQuery]);
 
-  const commitSelectedBlockKeys = useCallback(
-    (nextKeys: NodeKey[]) => {
-      const uniqueKeys = Array.from(new Set(nextKeys));
+  const commitBlockSelection = useCallback((scopeKey: NodeKey | undefined, nextKeys: NodeKey[]) => {
+    const uniqueKeys = Array.from(new Set(nextKeys));
+    const nextScopeKey = uniqueKeys.length > 0 ? scopeKey : undefined;
 
-      if (areNodeKeyListsEqual(selectedBlockKeysRef.current, uniqueKeys)) {
-        return;
-      }
+    if (
+      selectedBlockScopeKeyRef.current === nextScopeKey &&
+      areNodeKeyListsEqual(selectedBlockKeysRef.current, uniqueKeys)
+    ) {
+      return;
+    }
 
-      for (const element of selectedBlockElementsRef.current) {
-        element.removeAttribute("data-markflow-block-selected");
-      }
-
-      const nextElements = new Set<HTMLElement>();
-
-      for (const key of uniqueKeys) {
-        const element = editor.getElementByKey(key);
-
-        if (element) {
-          element.setAttribute("data-markflow-block-selected", "true");
-          nextElements.add(element);
-        }
-      }
-
-      selectedBlockElementsRef.current = nextElements;
-      selectedBlockKeysRef.current = uniqueKeys;
-      setSelectedBlockKeys(uniqueKeys);
-    },
-    [editor]
-  );
+    selectedBlockScopeKeyRef.current = nextScopeKey;
+    selectedBlockKeysRef.current = uniqueKeys;
+    setSelectedBlockScopeKey(nextScopeKey);
+    setSelectedBlockKeys(uniqueKeys);
+  }, []);
 
   const measureHandles = useCallback(() => {
     const root = rootElementRef.current;
@@ -320,15 +369,14 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
     const scroller = root?.parentElement;
 
     if (!root || !layer || !scroller) {
+      handlesRef.current = [];
       setHandles([]);
+      setSelectionHighlights([]);
       setSelectionGutter(undefined);
       return;
     }
 
-    const contentBlockKeys = getHandleBlockKeys(editor);
-    const containerKeySet = new Set(getTopLevelNestedContainerKeys(editor));
-    const blockKeys = Array.from(new Set([...containerKeySet, ...contentBlockKeys]));
-
+    const tree = getLogicalBlockTree(editor);
     const overlayRect = layer.getBoundingClientRect();
     const scrollerRect = scroller.getBoundingClientRect();
     const rootRect = root.getBoundingClientRect();
@@ -343,41 +391,42 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
     };
     setSelectionGutter((current) => (areSelectionGuttersEqual(current, nextGutter) ? current : nextGutter));
 
-    const validSelectedKeys = selectedBlockKeysRef.current.filter((key) => blockKeys.includes(key));
+    const selectedScope = selectedBlockScopeKeyRef.current
+      ? tree.scopes.get(selectedBlockScopeKeyRef.current)
+      : undefined;
+    const validSelectedKeys = selectedScope
+      ? selectedScope.units
+          .map((unit) => unit.key)
+          .filter((key) => selectedBlockKeysRef.current.includes(key))
+      : [];
 
-    if (!areNodeKeyListsEqual(selectedBlockKeysRef.current, validSelectedKeys)) {
-      commitSelectedBlockKeys(validSelectedKeys);
-    } else if (validSelectedKeys.length > 0) {
-      const nextSelectedElements = new Set<HTMLElement>();
-
-      for (const key of validSelectedKeys) {
-        const element = editor.getElementByKey(key);
-
-        if (element) {
-          element.setAttribute("data-markflow-block-selected", "true");
-          nextSelectedElements.add(element);
-        }
-      }
-
-      selectedBlockElementsRef.current = nextSelectedElements;
+    if (
+      selectedBlockScopeKeyRef.current !== selectedScope?.key ||
+      !areNodeKeyListsEqual(selectedBlockKeysRef.current, validSelectedKeys)
+    ) {
+      commitBlockSelection(selectedScope?.key, validSelectedKeys);
     }
 
-    const nextHandles = blockKeys.flatMap((key): BlockHandle[] => {
-      const element = editor.getElementByKey(key);
+    const handleUnits = Array.from(tree.units.values()).filter((unit) => unit.hasOwnRow);
+
+    const measuredHandles = handleUnits.flatMap((unit): BlockHandle[] => {
+      const rowKey = unit.rowKey;
+
+      const element = editor.getElementByKey(rowKey);
 
       if (!element) {
         return [];
       }
 
-      const isContainer = containerKeySet.has(key);
-      const rect = isContainer ? element.getBoundingClientRect() : getVisualBlockRect(element);
+      const rect = getVisualBlockRect(element);
 
       if (rect.height <= 0 || rect.width <= 0) {
         return [];
       }
 
-      const handleViewportTop = rect.top + 2;
-      const isDragSource = draggedBlocksRef.current?.sourceKey === key;
+      const firstLineRect = getFirstLineRect(element, rect);
+      const handleViewportTop = firstLineRect.top + Math.max(0, (firstLineRect.height - BLOCK_HANDLE_HEIGHT) / 2);
+      const isDragSource = draggedBlocksRef.current?.sourceKey === unit.key;
 
       if (
         !isDragSource &&
@@ -387,19 +436,52 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
         return [];
       }
 
+      const anchorLeft = getBlockControlAnchorLeft(element, rect);
+      const controlLeft = anchorLeft - BLOCK_HANDLE_GAP - BLOCK_HANDLE_PAIR_WIDTH;
+
       return [
         {
-          key,
-          isContainer,
-          isListItem: isListItemBlock(editor, key),
-          left: Math.max(6, rect.left - overlayRect.left - (isContainer ? 88 : 58)),
-          top: rect.top - overlayRect.top + 2
+          key: unit.key,
+          depth: unit.depth,
+          hotBottom: rect.bottom + 3,
+          hotLeft: controlLeft - 6,
+          hotRight: Math.max(rect.right, anchorLeft),
+          hotTop: rect.top - 3,
+          isListItem: unit.kind === "list-item",
+          left: Math.max(6, controlLeft - overlayRect.left),
+          rowKey,
+          top: handleViewportTop - overlayRect.top
         }
       ];
     });
+    const nextHandles = measuredHandles.sort((left, right) => left.top - right.top || left.left - right.left);
 
+    handlesRef.current = nextHandles;
     setHandles(nextHandles);
-  }, [commitSelectedBlockKeys, editor]);
+    setSelectionHighlights(
+      validSelectedKeys.flatMap((key): BlockSelectionHighlight[] => {
+        const unit = tree.units.get(key);
+        const rect = unit ? getLogicalBlockUnitRect(editor, tree, unit) : undefined;
+
+        if (!rect) {
+          return [];
+        }
+
+        return [
+          {
+            key,
+            height: rect.height,
+            left: rect.left - overlayRect.left,
+            top: rect.top - overlayRect.top,
+            width: rect.width
+          }
+        ];
+      })
+    );
+    setHoveredHandleKey((current) =>
+      current && nextHandles.some((handle) => handle.key === current) ? current : undefined
+    );
+  }, [commitBlockSelection, editor]);
 
   const requestMeasureHandles = useCallback(() => {
     if (frameRef.current !== undefined) {
@@ -437,17 +519,10 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
     setCommandQuery("");
     setActiveCommandIndex(0);
     setSelectionMarquee(undefined);
-    commitSelectedBlockKeys([]);
-  }, [commitSelectedBlockKeys, finishBlockDrag, isEditable]);
-
-  useEffect(
-    () => () => {
-      for (const element of selectedBlockElementsRef.current) {
-        element.removeAttribute("data-markflow-block-selected");
-      }
-    },
-    []
-  );
+    setHoveredHandleKey(undefined);
+    setFocusedHandleKey(undefined);
+    commitBlockSelection(undefined, []);
+  }, [commitBlockSelection, finishBlockDrag, isEditable]);
 
   useEffect(() => {
     const root = rootElement;
@@ -483,6 +558,63 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
     };
   }, [editor, requestMeasureHandles, rootElement]);
 
+  useEffect(() => {
+    requestMeasureHandles();
+  }, [requestMeasureHandles, selectedBlockKeys, selectedBlockScopeKey]);
+
+  useEffect(() => {
+    const scroller = rootElement?.parentElement;
+
+    if (!scroller || !isEditable) {
+      return;
+    }
+
+    let hoverFrame: number | undefined;
+    let pointerX = 0;
+    let pointerY = 0;
+
+    const updateHoveredHandle = () => {
+      hoverFrame = undefined;
+      const match = handlesRef.current
+        .filter(
+          (handle) =>
+            pointerX >= handle.hotLeft &&
+            pointerX <= handle.hotRight &&
+            pointerY >= handle.hotTop &&
+            pointerY <= handle.hotBottom
+        )
+        .sort(
+          (left, right) =>
+            right.depth - left.depth ||
+            right.hotLeft - left.hotLeft ||
+            left.hotBottom - left.hotTop - (right.hotBottom - right.hotTop)
+        )[0];
+      setHoveredHandleKey(match?.key);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+
+      if (hoverFrame === undefined) {
+        hoverFrame = window.requestAnimationFrame(updateHoveredHandle);
+      }
+    };
+
+    const handlePointerLeave = () => setHoveredHandleKey(undefined);
+
+    scroller.addEventListener("pointermove", handlePointerMove, { passive: true });
+    scroller.addEventListener("pointerleave", handlePointerLeave);
+    return () => {
+      scroller.removeEventListener("pointermove", handlePointerMove);
+      scroller.removeEventListener("pointerleave", handlePointerLeave);
+
+      if (hoverFrame !== undefined) {
+        window.cancelAnimationFrame(hoverFrame);
+      }
+    };
+  }, [isEditable, rootElement]);
+
   const startMarqueeSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const root = rootElementRef.current;
@@ -503,7 +635,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
       const startX = clamp(event.clientX, scrollerRect.left, scrollerRect.right);
       const startY = clamp(event.clientY, scrollerRect.top, scrollerRect.bottom);
       let moved = false;
-      let selectionScope: BlockScope | undefined;
+      let anchorBlockKey: NodeKey | undefined;
 
       const removeListeners = () => {
         document.removeEventListener("pointermove", handlePointerMove, true);
@@ -518,7 +650,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
         setSelectionMarquee(undefined);
 
         if (!moved) {
-          commitSelectedBlockKeys([]);
+          commitBlockSelection(undefined, []);
         }
       };
 
@@ -541,42 +673,46 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
           return;
         }
 
-        const intersectingBlocks = getHandleBlockKeys(editor).flatMap((key): Array<{ key: NodeKey; rect: DOMRect }> => {
-          const element = editor.getElementByKey(key);
-
-          if (!element) {
-            return [];
-          }
-
-          const rect = getVisualBlockRect(element);
-          return rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom
-            ? [{ key, rect }]
-            : [];
-        });
-
-        if (!selectionScope && intersectingBlocks.length > 0) {
-          const anchorBlock = intersectingBlocks.reduce((closest, candidate) =>
-            distanceFromYToRect(startY, candidate.rect) < distanceFromYToRect(startY, closest.rect)
-              ? candidate
-              : closest
-          );
-          selectionScope = getBlockScope(editor, anchorBlock.key);
-        }
-
-        const selectedUnitKeySet = new Set(
-          intersectingBlocks.flatMap(({ key }) => {
-            if (!selectionScope) {
-              return [key];
+        const tree = getLogicalBlockTree(editor);
+        const intersectingBlocks = Array.from(tree.units.values()).flatMap(
+          (unit): Array<{ depth: number; key: NodeKey; rect: DOMRect }> => {
+            if (!unit.hasOwnRow) {
+              return [];
             }
 
-            const unitKey = getBlockUnitKeyInScope(editor, key, selectionScope);
-            return unitKey ? [unitKey] : [];
-          })
+            const element = editor.getElementByKey(unit.rowKey);
+
+            if (!element) {
+              return [];
+            }
+
+            const rect = getVisualBlockRect(element);
+            return rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom
+              ? [{ depth: unit.depth, key: unit.key, rect }]
+              : [];
+          }
         );
-        const selectedKeys = selectionScope
-          ? selectionScope.units.map((unit) => unit.key).filter((key) => selectedUnitKeySet.has(key))
-          : [...selectedUnitKeySet];
-        commitSelectedBlockKeys(selectedKeys);
+
+        if (!anchorBlockKey && intersectingBlocks.length > 0) {
+          const anchorBlock = intersectingBlocks.reduce((closest, candidate) => {
+            const closestDistance = distanceFromYToRect(startY, closest.rect);
+            const candidateDistance = distanceFromYToRect(startY, candidate.rect);
+            return candidateDistance < closestDistance ||
+              (candidateDistance === closestDistance && candidate.depth > closest.depth)
+              ? candidate
+              : closest;
+          });
+          anchorBlockKey = anchorBlock.key;
+        }
+
+        const selection = anchorBlockKey
+          ? resolveHierarchicalBlockSelection(
+              tree,
+              anchorBlockKey,
+              intersectingBlocks.map((block) => block.key)
+            )
+          : undefined;
+        commitBlockSelection(selection?.scopeKey, selection?.keys ?? []);
       };
 
       const handlePointerMove = (pointerEvent: PointerEvent) => {
@@ -617,7 +753,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
       document.addEventListener("pointercancel", handlePointerCancel, true);
       window.addEventListener("blur", handleWindowBlur);
     },
-    [commitSelectedBlockKeys, editor]
+    [commitBlockSelection, editor]
   );
 
   useEffect(() => {
@@ -638,12 +774,12 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
         return;
       }
 
-      commitSelectedBlockKeys([]);
+      commitBlockSelection(undefined, []);
     };
 
     scroller.addEventListener("pointerdown", clearBlockSelection, true);
     return () => scroller.removeEventListener("pointerdown", clearBlockSelection, true);
-  }, [commitSelectedBlockKeys, rootElement]);
+  }, [commitBlockSelection, rootElement]);
 
   const closeCommandMenu = useCallback(
     (options: { insertSpace?: boolean; removeSlash?: boolean; restoreFocus?: boolean } = {}) => {
@@ -968,7 +1104,8 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
         orderedKeys = [blockKey];
       }
 
-      commitSelectedBlockKeys(orderedKeys);
+      const logicalScopeKey = getLogicalBlockTree(editor).units.get(blockKey)?.scopeKey;
+      commitBlockSelection(logicalScopeKey, orderedKeys);
       setCommandQuery("");
       setActiveCommandIndex(0);
       const anchorRect = new DOMRect(event.clientX, event.clientY, 0, 0);
@@ -982,7 +1119,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
       commandMenuRef.current = nextMenu;
       setCommandMenu(nextMenu);
     },
-    [commitSelectedBlockKeys, editor]
+    [commitBlockSelection, editor]
   );
 
   const applyBlockCommand = useCallback(
@@ -1068,7 +1205,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
             }
 
             if (menu.source === "context") {
-              commitSelectedBlockKeys([]);
+              commitBlockSelection(undefined, []);
             }
 
             if (!editor.isEditable()) {
@@ -1083,7 +1220,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
         }
       );
     },
-    [commandMenu, commitSelectedBlockKeys, editor, editorModule, realm]
+    [commandMenu, commitBlockSelection, editor, editorModule, realm]
   );
 
   const handleMenuKeyDown = useCallback(
@@ -1279,7 +1416,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
         return;
       }
 
-      moveSiblingBlocks(editor, draggedBlocks, target);
+      moveLogicalBlocks(editor, draggedBlocks, target);
       finishBlockDrag();
       requestMeasureHandles();
     };
@@ -1344,29 +1481,57 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
           }}
         />
       ) : null}
+      {selectionHighlights.map((highlight) => (
+        <div
+          aria-hidden="true"
+          className="markflow-block-selection-highlight"
+          data-block-key={highlight.key}
+          key={highlight.key}
+          style={{
+            height: `${highlight.height}px`,
+            left: `${highlight.left}px`,
+            top: `${highlight.top}px`,
+            width: `${highlight.width}px`
+          }}
+        />
+      ))}
       {isEditable ? handles.map((handle) => (
         <div
           key={handle.key}
           className="markflow-block-controls"
-          data-container={handle.isContainer || undefined}
+          data-block-key={handle.key}
+          data-depth={handle.depth}
+          data-dragging={draggedBlocksRef.current?.sourceKey === handle.key || undefined}
           data-selected={selectedBlockKeys.includes(handle.key)}
+          data-visible={
+            hoveredHandleKey === handle.key ||
+            focusedHandleKey === handle.key ||
+            selectedBlockKeys.includes(handle.key) ||
+            draggedBlocksRef.current?.sourceKey === handle.key ||
+            commandMenu?.targetKey === handle.key ||
+            undefined
+          }
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setFocusedHandleKey((current) => (current === handle.key ? undefined : current));
+            }
+          }}
+          onFocusCapture={() => setFocusedHandleKey(handle.key)}
           style={{ left: `${handle.left}px`, top: `${handle.top}px` }}
         >
-          {!handle.isContainer ? (
-            <button
-              aria-label={handle.isListItem ? "Add list item below" : "Add block below"}
-              className="markflow-block-add-button"
-              onClick={() => openMenuAfterBlock(handle.key)}
-              title={handle.isListItem ? "Add list item below" : "Add block below"}
-              type="button"
-            >
-              <svg aria-hidden="true" viewBox="0 0 16 16">
-                <path d="M8 3v10M3 8h10" />
-              </svg>
-            </button>
-          ) : null}
           <button
-            aria-label={handle.isContainer ? "Drag block group" : "Drag block"}
+            aria-label={handle.isListItem ? "Add list item below" : "Add block below"}
+            className="markflow-block-add-button"
+            onClick={() => openMenuAfterBlock(handle.key)}
+            title={handle.isListItem ? "Add list item below" : "Add block below"}
+            type="button"
+          >
+            <svg aria-hidden="true" viewBox="0 0 16 16">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+          </button>
+          <button
+            aria-label="Drag block"
             aria-pressed={selectedBlockKeys.includes(handle.key)}
             className="markflow-block-drag-handle"
             draggable
@@ -1380,16 +1545,32 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
                 return;
               }
 
-              const scope = getBlockScope(editor, handle.key);
+              const tree = getLogicalBlockTree(editor);
+              const unit = tree.units.get(handle.key);
+
+              if (!unit) {
+                event.preventDefault();
+                return;
+              }
+
+              const currentScopeKey = selectedBlockScopeKeyRef.current;
+              const selectedUnitKey = currentScopeKey
+                ? getUnitKeyInScope(tree, handle.key, currentScopeKey)
+                : undefined;
+              const useCurrentSelection = Boolean(
+                currentScopeKey &&
+                selectedUnitKey &&
+                selectedBlockKeysRef.current.includes(selectedUnitKey)
+              );
+              const scopeKey = useCurrentSelection ? currentScopeKey : unit.scopeKey;
+              const scope = scopeKey ? tree.scopes.get(scopeKey) : undefined;
+              const selectedKeys = useCurrentSelection ? selectedBlockKeysRef.current : [unit.key];
 
               if (!scope) {
                 event.preventDefault();
                 return;
               }
 
-              const selectedKeys = selectedBlockKeysRef.current.includes(handle.key)
-                ? selectedBlockKeysRef.current
-                : [handle.key];
               const orderedKeys = scope.units
                 .map((unit) => unit.key)
                 .filter((key) => selectedKeys.includes(key));
@@ -1399,9 +1580,9 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
                 return;
               }
 
-              const draggedBlocks = { parentKey: scope.parentKey, keys: orderedKeys, sourceKey: handle.key };
+              const draggedBlocks = { keys: orderedKeys, scopeKey: scope.key, sourceKey: handle.key };
               draggedBlocksRef.current = draggedBlocks;
-              commitSelectedBlockKeys(orderedKeys);
+              commitBlockSelection(scope.key, orderedKeys);
               const sourceElement = event.currentTarget;
               const handleNativeDragEnd = () => finishBlockDrag();
               nativeDragEndCleanupRef.current?.();
@@ -1410,14 +1591,22 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
               event.dataTransfer.effectAllowed = "move";
               event.dataTransfer.setData(BLOCK_DRAG_DATA_FORMAT, JSON.stringify(draggedBlocks));
             }}
-            onContextMenu={handle.isListItem || handle.isContainer ? undefined : (event) => openTurnIntoMenu(event, handle.key)}
+            onContextMenu={handle.isListItem ? undefined : (event) => openTurnIntoMenu(event, handle.key)}
             onPointerDown={(event) => {
               if (event.button !== 0) {
                 return;
               }
 
+              const tree = getLogicalBlockTree(editor);
+              const unit = tree.units.get(handle.key);
+
+              if (!unit) {
+                return;
+              }
+
               const currentKeys = selectedBlockKeysRef.current;
-              const scope = getBlockScope(editor, handle.key);
+              const currentScopeKey = selectedBlockScopeKeyRef.current;
+              const scope = tree.scopes.get(unit.scopeKey);
 
               if (!scope) {
                 return;
@@ -1425,11 +1614,14 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
 
               const siblingKeys = scope.units.map((unit) => unit.key);
               const siblingKeySet = new Set(siblingKeys);
-              const selectedSiblingKeys = currentKeys.filter((key) => siblingKeySet.has(key));
 
               if (event.ctrlKey || event.metaKey) {
                 event.preventDefault();
-                commitSelectedBlockKeys(
+                const selectedSiblingKeys = currentScopeKey === scope.key
+                  ? currentKeys.filter((key) => siblingKeySet.has(key))
+                  : [];
+                commitBlockSelection(
+                  scope.key,
                   selectedSiblingKeys.includes(handle.key)
                     ? selectedSiblingKeys.filter((key) => key !== handle.key)
                     : siblingKeys.filter((key) => [...selectedSiblingKeys, handle.key].includes(key))
@@ -1437,17 +1629,15 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
                 return;
               }
 
-              if (!currentKeys.includes(handle.key)) {
-                commitSelectedBlockKeys([handle.key]);
+              const selectedUnitKey = currentScopeKey
+                ? getUnitKeyInScope(tree, handle.key, currentScopeKey)
+                : undefined;
+
+              if (!selectedUnitKey || !currentKeys.includes(selectedUnitKey)) {
+                commitBlockSelection(scope.key, [handle.key]);
               }
             }}
-            title={
-              handle.isContainer
-                ? "Drag block group"
-                : handle.isListItem
-                  ? "Drag list item"
-                  : "Drag block · Right-click to change type"
-            }
+            title={handle.isListItem ? "Drag list item" : "Drag block · Right-click to change type"}
             type="button"
           >
             <svg aria-hidden="true" className="markflow-block-drag-handle-glyph" viewBox="0 0 16 16">
@@ -1782,97 +1972,339 @@ function publishBlockCommand(
   }
 }
 
-function getHandleBlockKeys(editor: ReturnType<typeof useLexicalComposerContext>[0]): NodeKey[] {
-  const blockKeys: NodeKey[] = [];
+function getLogicalBlockTree(editor: ReturnType<typeof useLexicalComposerContext>[0]): LogicalBlockTree {
+  let tree: LogicalBlockTree | undefined;
 
   editor.getEditorState().read(() => {
-    for (const node of $getRoot().getChildren()) {
-      $collectHandleBlockKeys(node, blockKeys);
-    }
+    tree = $buildLogicalBlockTree();
   });
 
-  return blockKeys;
+  if (!tree) {
+    throw new Error("The logical block tree could not be read.");
+  }
+
+  return tree;
 }
 
-function getTopLevelNestedContainerKeys(
-  editor: ReturnType<typeof useLexicalComposerContext>[0]
-): NodeKey[] {
-  let containerKeys: NodeKey[] = [];
+function $buildLogicalBlockTree(): LogicalBlockTree {
+  const root = $getRoot();
+  const scopes = new Map<NodeKey, LogicalBlockScope>();
+  const units = new Map<NodeKey, LogicalBlockUnit>();
 
-  editor.getEditorState().read(() => {
-    containerKeys = $getRoot()
-      .getChildren()
-      .filter((node) => $isListNode(node) || ($isQuoteNode(node) && node.getChildren().some((child) => !child.isInline())))
-      .map((node) => node.getKey());
-  });
-
-  return containerKeys;
+  $buildLogicalScope(root, root.getKey(), undefined, 0, scopes, units);
+  return { rootScopeKey: root.getKey(), scopes, units };
 }
 
-function isListItemBlock(editor: ReturnType<typeof useLexicalComposerContext>[0], blockKey: NodeKey): boolean {
-  let isListItem = false;
+function $buildLogicalScope(
+  host: LexicalNode,
+  scopeKey: NodeKey,
+  parentUnitKey: NodeKey | undefined,
+  depth: number,
+  scopes: Map<NodeKey, LogicalBlockScope>,
+  units: Map<NodeKey, LogicalBlockUnit>
+): LogicalBlockScope {
+  const scope: LogicalBlockScope = {
+    hostKey: host.getKey(),
+    key: scopeKey,
+    parentUnitKey,
+    unitKeys: [],
+    units: []
+  };
+  scopes.set(scopeKey, scope);
 
-  editor.getEditorState().read(() => {
-    isListItem = $isListItemNode($getNodeByKey(blockKey));
-  });
+  if (!$isElementNode(host)) {
+    return scope;
+  }
 
-  return isListItem;
-}
-
-function $collectHandleBlockKeys(node: LexicalNode, blockKeys: NodeKey[]): void {
-  if ($isListNode(node)) {
-    const units = $getSiblingBlockUnits(node);
-    const claimedNodeKeys = new Set(units.flatMap((unit) => unit.nodeKeys));
-
-    for (const unit of units) {
-      blockKeys.push(unit.key);
-
-      for (const unitNodeKey of unit.nodeKeys) {
-        const unitNode = $getNodeByKey(unitNodeKey);
-
-        if (!$isElementNode(unitNode)) {
-          continue;
-        }
-
-        for (const child of unitNode.getChildren()) {
-          if ($isListNode(child)) {
-            $collectHandleBlockKeys(child, blockKeys);
-          }
-        }
-      }
+  for (const node of host.getChildren()) {
+    if ($isListNode(node)) {
+      $appendLogicalListUnits(node, scope, depth, scopes, units);
+      continue;
     }
 
-    for (const child of node.getChildren()) {
-      if (!claimedNodeKeys.has(child.getKey()) && $isListItemNode(child) && isStructuralListItem(child)) {
-        const nestedList = child.getFirstChild();
+    $appendLogicalNodeUnit(node, scope, depth, scopes, units);
+  }
 
-        if ($isListNode(nestedList)) {
-          $collectHandleBlockKeys(nestedList, blockKeys);
-        }
-      }
-    }
+  scope.unitKeys = scope.units.map((unit) => unit.key);
+  return scope;
+}
+
+function $appendLogicalNodeUnit(
+  node: LexicalNode,
+  scope: LogicalBlockScope,
+  depth: number,
+  scopes: Map<NodeKey, LogicalBlockScope>,
+  units: Map<NodeKey, LogicalBlockUnit>
+): void {
+  const childBlocks = $isQuoteNode(node)
+    ? node.getChildren().filter((child) => !child.isInline())
+    : [];
+  const isContainer = childBlocks.length > 0;
+  const unit: LogicalBlockUnit = {
+    depth,
+    hasOwnRow: !isContainer,
+    key: node.getKey(),
+    kind: isContainer ? "container" : "block",
+    nodeKeys: [node.getKey()],
+    physicalParentKey: scope.hostKey ?? scope.key,
+    rowKey: node.getKey(),
+    scopeKey: scope.key
+  };
+  scope.units.push(unit);
+  units.set(unit.key, unit);
+
+  if (isContainer) {
+    $buildLogicalScope(node, unit.key, unit.key, depth + 1, scopes, units);
+  }
+}
+
+function $appendLogicalListUnits(
+  list: LexicalNode,
+  scope: LogicalBlockScope,
+  depth: number,
+  scopes: Map<NodeKey, LogicalBlockScope>,
+  units: Map<NodeKey, LogicalBlockUnit>
+): void {
+  if (!$isListNode(list)) {
     return;
   }
 
-  if ($isQuoteNode(node)) {
-    const childBlocks = node.getChildren().filter((child) => !child.isInline());
+  const listUnits = $getSiblingBlockUnits(list);
 
-    if (childBlocks.length === 0) {
-      blockKeys.push(node.getKey());
-      return;
-    }
-
-    for (const child of childBlocks) {
-      if ($isListNode(child) || $isQuoteNode(child)) {
-        $collectHandleBlockKeys(child, blockKeys);
-      } else {
-        blockKeys.push(child.getKey());
-      }
-    }
+  if (listUnits.length === 0) {
+    $appendLogicalNodeUnit(list, scope, depth, scopes, units);
     return;
   }
 
-  blockKeys.push(node.getKey());
+  for (const blockUnit of listUnits) {
+    const listItem = $getNodeByKey(blockUnit.key);
+
+    if (!$isListItemNode(listItem)) {
+      continue;
+    }
+
+    const unit: LogicalBlockUnit = {
+      ...blockUnit,
+      depth,
+      hasOwnRow: true,
+      kind: "list-item",
+      listStart: list.getStart(),
+      listType: list.getListType(),
+      physicalParentKey: list.getKey(),
+      rowKey: listItem.getKey(),
+      scopeKey: scope.key
+    };
+    scope.units.push(unit);
+    units.set(unit.key, unit);
+
+    const nestedLists = blockUnit.nodeKeys.flatMap((nodeKey): LexicalNode[] => {
+      const unitNode = $getNodeByKey(nodeKey);
+
+      if (!$isElementNode(unitNode)) {
+        return [];
+      }
+
+      return unitNode.getChildren().filter($isListNode);
+    });
+
+    if (nestedLists.length === 0) {
+      continue;
+    }
+
+    const childScope: LogicalBlockScope = {
+      hostKey: nestedLists.length === 1 ? nestedLists[0].getKey() : undefined,
+      key: unit.key,
+      parentUnitKey: unit.key,
+      structuralListRun: nestedLists.length > 1
+        ? $getStructuralListRun(nestedLists, blockUnit.nodeKeys)
+        : undefined,
+      unitKeys: [],
+      units: []
+    };
+    scopes.set(childScope.key, childScope);
+
+    for (const nestedList of nestedLists) {
+      $appendLogicalListUnits(nestedList, childScope, depth + 1, scopes, units);
+    }
+
+    childScope.unitKeys = childScope.units.map((childUnit) => childUnit.key);
+  }
+}
+
+function $getStructuralListRun(
+  nestedLists: LexicalNode[],
+  ownerNodeKeys: NodeKey[]
+): LogicalBlockScope["structuralListRun"] {
+  const ownerNodeKeySet = new Set(ownerNodeKeys);
+  const wrappers = nestedLists.flatMap((nestedList): ListItemNode[] => {
+    const wrapper = nestedList.getParent();
+    return $isListItemNode(wrapper) && isStructuralListItem(wrapper) ? [wrapper] : [];
+  });
+
+  if (wrappers.length !== nestedLists.length || wrappers.some((wrapper) => !ownerNodeKeySet.has(wrapper.getKey()))) {
+    return undefined;
+  }
+
+  const outerList = wrappers[0]?.getParent();
+
+  if (!$isListNode(outerList) || wrappers.some((wrapper) => !wrapper.getParent()?.is(outerList))) {
+    return undefined;
+  }
+
+  const outerKeys = outerList.getChildrenKeys();
+  const firstIndex = outerKeys.indexOf(wrappers[0].getKey());
+
+  if (
+    firstIndex < 0 ||
+    wrappers.some((wrapper, index) => outerKeys[firstIndex + index] !== wrapper.getKey())
+  ) {
+    return undefined;
+  }
+
+  return {
+    outerListKey: outerList.getKey(),
+    wrapperKeys: wrappers.map((wrapper) => wrapper.getKey())
+  };
+}
+
+function getFirstVisibleDescendantRowKey(tree: LogicalBlockTree, unitKey: NodeKey): NodeKey | undefined {
+  const unit = tree.units.get(unitKey);
+
+  if (!unit) {
+    return undefined;
+  }
+
+  if (unit.hasOwnRow) {
+    return unit.rowKey;
+  }
+
+  const childScope = tree.scopes.get(unit.key);
+
+  for (const child of childScope?.units ?? []) {
+    const rowKey = getFirstVisibleDescendantRowKey(tree, child.key);
+
+    if (rowKey) {
+      return rowKey;
+    }
+  }
+
+  return undefined;
+}
+
+function getLogicalBlockUnitRect(
+  editor: ReturnType<typeof useLexicalComposerContext>[0],
+  tree: LogicalBlockTree,
+  unit: LogicalBlockUnit
+): DOMRect | undefined {
+  const rects = unit.nodeKeys.flatMap((key): DOMRect[] => {
+    const element = editor.getElementByKey(key);
+    return element ? [element.getBoundingClientRect()] : [];
+  });
+  const childScope = tree.scopes.get(unit.key);
+
+  for (const child of childScope?.units ?? []) {
+    const childRect = getLogicalBlockUnitRect(editor, tree, child);
+
+    if (childRect) {
+      rects.push(childRect);
+    }
+  }
+
+  const rect = unionClientRects(rects);
+
+  if (!rect || unit.kind !== "list-item") {
+    return rect;
+  }
+
+  const rowElement = editor.getElementByKey(unit.rowKey);
+  const listElement = rowElement?.parentElement;
+
+  if (listElement?.tagName !== "UL" && listElement?.tagName !== "OL") {
+    return rect;
+  }
+
+  const listRect = listElement.getBoundingClientRect();
+  const left = Math.min(rect.left, listRect.left);
+  return new DOMRect(left, rect.top, rect.right - left, rect.height);
+}
+
+function getFirstLineRect(element: HTMLElement, fallbackRect: DOMRect): DOMRect {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let textNode = walker.nextNode();
+
+  while (textNode) {
+    if (textNode.textContent?.trim()) {
+      const range = document.createRange();
+      range.selectNodeContents(textNode);
+      const rect = Array.from(range.getClientRects()).find(
+        (candidate) =>
+          candidate.height > 0 &&
+          candidate.bottom > fallbackRect.top &&
+          candidate.top < fallbackRect.bottom
+      );
+
+      if (rect) {
+        return rect;
+      }
+    }
+
+    textNode = walker.nextNode();
+  }
+
+  const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight) || fallbackRect.height;
+  return new DOMRect(fallbackRect.left, fallbackRect.top, fallbackRect.width, Math.min(fallbackRect.height, lineHeight));
+}
+
+function getBlockControlAnchorLeft(element: HTMLElement, fallbackRect: DOMRect): number {
+  const quote = element.closest("blockquote");
+
+  if (quote) {
+    if (element.tagName !== "LI") {
+      return quote.getBoundingClientRect().left;
+    }
+
+    const lists: HTMLElement[] = [];
+    let ancestor = element.parentElement;
+
+    while (ancestor && ancestor !== quote) {
+      if (ancestor.tagName === "UL" || ancestor.tagName === "OL") {
+        lists.push(ancestor);
+      }
+
+      ancestor = ancestor.parentElement;
+    }
+
+    const innerListRect = lists[0]?.getBoundingClientRect();
+    const outerListRect = lists.at(-1)?.getBoundingClientRect();
+
+    if (innerListRect && outerListRect) {
+      return quote.getBoundingClientRect().left + Math.max(0, innerListRect.left - outerListRect.left);
+    }
+
+    return quote.getBoundingClientRect().left;
+  }
+
+  if (element.tagName === "LI") {
+    const list = element.parentElement;
+
+    if (list?.tagName === "UL" || list?.tagName === "OL") {
+      return list.getBoundingClientRect().left;
+    }
+  }
+
+  return fallbackRect.left;
+}
+
+function unionClientRects(rects: DOMRect[]): DOMRect | undefined {
+  if (rects.length === 0) {
+    return undefined;
+  }
+
+  const left = Math.min(...rects.map((rect) => rect.left));
+  const top = Math.min(...rects.map((rect) => rect.top));
+  const right = Math.max(...rects.map((rect) => rect.right));
+  const bottom = Math.max(...rects.map((rect) => rect.bottom));
+  return new DOMRect(left, top, right - left, bottom - top);
 }
 
 function $getSiblingBlockUnits(parent: LexicalNode): BlockUnit[] {
@@ -1934,64 +2366,26 @@ function getBlockScope(
   return scope;
 }
 
-function getBlockUnitKeyInScope(
-  editor: ReturnType<typeof useLexicalComposerContext>[0],
-  blockKey: NodeKey,
-  scope: BlockScope
-): NodeKey | undefined {
-  let unitKey: NodeKey | undefined;
-
-  editor.getEditorState().read(() => {
-    let node = $getNodeByKey(blockKey);
-
-    while (node && node.getKey() !== scope.parentKey) {
-      const nodeKey = node.getKey();
-      const matchingUnit = scope.units.find((unit) => unit.nodeKeys.includes(nodeKey));
-
-      if (matchingUnit) {
-        unitKey = matchingUnit.key;
-        return;
-      }
-
-      node = node.getParent();
-    }
-  });
-
-  return unitKey;
-}
-
-function getBlockScopeByParent(
-  editor: ReturnType<typeof useLexicalComposerContext>[0],
-  parentKey: NodeKey
-): BlockScope | undefined {
-  let scope: BlockScope | undefined;
-
-  editor.getEditorState().read(() => {
-    const parent = $getNodeByKey(parentKey);
-
-    if ($isElementNode(parent)) {
-      scope = { parentKey, units: $getSiblingBlockUnits(parent) };
-    }
-  });
-
-  return scope;
-}
-
 function getDropTarget(
   editor: ReturnType<typeof useLexicalComposerContext>[0],
   clientY: number,
   draggedBlocks: DraggedBlocks
 ): DropTarget | undefined {
-  const scope = getBlockScopeByParent(editor, draggedBlocks.parentKey);
+  const tree = getLogicalBlockTree(editor);
+  const scope = tree.scopes.get(draggedBlocks.scopeKey);
 
-  if (!scope || !scope.units.some((unit) => draggedBlocks.keys.includes(unit.key))) {
+  if (
+    !scope ||
+    (!scope.hostKey && !scope.structuralListRun) ||
+    !scope.units.some((unit) => draggedBlocks.keys.includes(unit.key))
+  ) {
     return undefined;
   }
 
   let target: DropTarget | undefined;
 
   for (const unit of scope.units) {
-    const rect = getBlockUnitRect(editor, unit);
+    const rect = getLogicalBlockUnitRect(editor, tree, unit);
 
     if (!rect || rect.height <= 0 || rect.width <= 0) {
       continue;
@@ -2017,16 +2411,21 @@ function getDropIndicator(
   target: DropTarget,
   layer: HTMLDivElement | null
 ): DropIndicator | undefined {
-  const scope = getBlockScope(editor, target.key);
-  const targetUnit = scope?.units.find((unit) => unit.key === target.key);
-  const targetElement = editor.getElementByKey(target.key);
+  const tree = getLogicalBlockTree(editor);
+  const targetUnit = tree.units.get(target.key);
+  const rowKey = targetUnit
+    ? targetUnit.hasOwnRow
+      ? targetUnit.rowKey
+      : getFirstVisibleDescendantRowKey(tree, targetUnit.key)
+    : undefined;
+  const targetElement = rowKey ? editor.getElementByKey(rowKey) : null;
   const root = editor.getRootElement();
 
   if (!targetElement || !targetUnit || !root || !layer) {
     return undefined;
   }
 
-  const targetRect = getBlockUnitRect(editor, targetUnit);
+  const targetRect = getLogicalBlockUnitRect(editor, tree, targetUnit);
   const visualRect = getVisualBlockRect(targetElement);
 
   if (!targetRect) {
@@ -2046,52 +2445,174 @@ function getDropIndicator(
   };
 }
 
-function moveSiblingBlocks(
+function moveLogicalBlocks(
   editor: ReturnType<typeof useLexicalComposerContext>[0],
   draggedBlocks: DraggedBlocks,
   target: DropTarget
 ): void {
   editor.update(() => {
-    const parent = $getNodeByKey(draggedBlocks.parentKey);
+    const tree = $buildLogicalBlockTree();
+    const scope = tree.scopes.get(draggedBlocks.scopeKey);
+    const plan = scope
+      ? getBlockMovePlan(scope.units.map((unit) => unit.key), draggedBlocks.keys, target)
+      : undefined;
 
-    if (!$isElementNode(parent)) {
-      return;
-    }
-
-    const units = $getSiblingBlockUnits(parent);
-    const plan = getBlockMovePlan(units.map((unit) => unit.key), draggedBlocks.keys, target);
-
-    if (!plan) {
+    if (!scope || !plan) {
       return;
     }
 
     $setSelection(null);
-    const unitsByKey = new Map(units.map((unit) => [unit.key, unit]));
-    const movingNodeKeys = plan.draggedKeys.flatMap((key) => unitsByKey.get(key)?.nodeKeys ?? []);
-    const remainingUnits = plan.remainingKeys.flatMap((key) => {
-      const unit = unitsByKey.get(key);
-      return unit ? [unit] : [];
-    });
 
-    if (plan.insertAt < remainingUnits.length) {
-      const anchor = $getNodeByKey(remainingUnits[plan.insertAt].nodeKeys[0]);
-
-      if (!anchor) {
-        return;
-      }
-
-      for (const key of movingNodeKeys) {
-        const node = $getNodeByKey(key);
-
-        if (node) {
-          anchor.insertBefore(node, false);
-        }
-      }
+    if (scope.structuralListRun) {
+      $moveLogicalUnitsInStructuralListRun(scope, plan, scope.structuralListRun);
       return;
     }
 
-    const lastUnit = remainingUnits.at(-1);
-    let anchor = lastUnit ? $getNodeByKey(lastUnit.nodeKeys.at(-1) ?? lastUnit.key) : null;
+    const withinParentKey = getWithinPhysicalParentMoveKey(scope, plan);
+
+    if (withinParentKey) {
+      $moveLogicalUnitsWithinParent(scope, plan, withinParentKey);
+      return;
+    }
+
+    $moveLogicalUnitsAcrossTransparentLists(scope, plan);
+  });
+}
+
+function $moveLogicalUnitsInStructuralListRun(
+  scope: LogicalBlockScope,
+  plan: { draggedKeys: NodeKey[]; remainingKeys: NodeKey[]; insertAt: number },
+  host: NonNullable<LogicalBlockScope["structuralListRun"]>
+): void {
+  const outerList = $getNodeByKey(host.outerListKey);
+  const wrappers = host.wrapperKeys.flatMap((key): ListItemNode[] => {
+    const wrapper = $getNodeByKey(key);
+    return $isListItemNode(wrapper) && isStructuralListItem(wrapper) ? [wrapper] : [];
+  });
+
+  if (
+    !$isListNode(outerList) ||
+    wrappers.length !== host.wrapperKeys.length ||
+    wrappers.some((wrapper) => !wrapper.getParent()?.is(outerList))
+  ) {
+    return;
+  }
+
+  const outerKeys = outerList.getChildrenKeys();
+  const firstWrapperIndex = outerKeys.indexOf(host.wrapperKeys[0]);
+
+  if (
+    firstWrapperIndex < 0 ||
+    host.wrapperKeys.some((key, index) => outerKeys[firstWrapperIndex + index] !== key)
+  ) {
+    return;
+  }
+
+  const desiredKeys = [
+    ...plan.remainingKeys.slice(0, plan.insertAt),
+    ...plan.draggedKeys,
+    ...plan.remainingKeys.slice(plan.insertAt)
+  ];
+  const unitsByKey = new Map(scope.units.map((unit) => [unit.key, unit]));
+  const wrapperKeySet = new Set(host.wrapperKeys);
+  const records = desiredKeys.flatMap((key) => {
+    const unit = unitsByKey.get(key);
+    const sourceList = unit ? $getNodeByKey(unit.physicalParentKey) : null;
+    const sourceWrapper = sourceList?.getParent();
+    const nodes = unit?.nodeKeys.flatMap((nodeKey): LexicalNode[] => {
+      const node = $getNodeByKey(nodeKey);
+      return node ? [node] : [];
+    }) ?? [];
+
+    if (
+      !unit ||
+      unit.kind !== "list-item" ||
+      !unit.listType ||
+      !$isListNode(sourceList) ||
+      !$isListItemNode(sourceWrapper) ||
+      !wrapperKeySet.has(sourceWrapper.getKey()) ||
+      nodes.length !== unit.nodeKeys.length
+    ) {
+      return [];
+    }
+
+    return [{ nodes, sourceList, unit }];
+  });
+
+  if (records.length !== desiredKeys.length) {
+    return;
+  }
+
+  const replacementWrappers: ListItemNode[] = [];
+  let currentList: ReturnType<typeof $createListNode> | undefined;
+
+  for (const record of records) {
+    if (!currentList || currentList.getListType() !== record.unit.listType) {
+      currentList = $createListNode(record.unit.listType, record.unit.listStart ?? 1);
+      copyListPresentation(record.sourceList, currentList);
+      const wrapper = $createListItemNode();
+      wrapper.append(currentList);
+      replacementWrappers.push(wrapper);
+    }
+
+    currentList.append(...record.nodes);
+  }
+
+  outerList.splice(firstWrapperIndex, host.wrapperKeys.length, replacementWrappers);
+}
+
+function getWithinPhysicalParentMoveKey(
+  scope: LogicalBlockScope,
+  plan: { draggedKeys: NodeKey[]; remainingKeys: NodeKey[]; insertAt: number }
+): NodeKey | undefined {
+  const unitsByKey = new Map(scope.units.map((unit) => [unit.key, unit]));
+  const movingUnits = plan.draggedKeys.flatMap((key) => {
+    const unit = unitsByKey.get(key);
+    return unit ? [unit] : [];
+  });
+  const physicalParentKeys = new Set(movingUnits.map((unit) => unit.physicalParentKey));
+
+  if (movingUnits.length !== plan.draggedKeys.length || physicalParentKeys.size !== 1) {
+    return undefined;
+  }
+
+  const physicalParentKey = movingUnits[0].physicalParentKey;
+  const remainingUnits = plan.remainingKeys.flatMap((key) => {
+    const unit = unitsByKey.get(key);
+    return unit ? [unit] : [];
+  });
+  const rightUnit = remainingUnits[plan.insertAt];
+  const leftUnit = remainingUnits[plan.insertAt - 1];
+
+  return scope.units.every((unit) => unit.physicalParentKey === physicalParentKey) ||
+    rightUnit?.physicalParentKey === physicalParentKey ||
+    leftUnit?.physicalParentKey === physicalParentKey
+    ? physicalParentKey
+    : undefined;
+}
+
+function $moveLogicalUnitsWithinParent(
+  scope: LogicalBlockScope,
+  plan: { draggedKeys: NodeKey[]; remainingKeys: NodeKey[]; insertAt: number },
+  physicalParentKey: NodeKey
+): void {
+  const parent = $getNodeByKey(physicalParentKey);
+
+  if (!$isElementNode(parent)) {
+    return;
+  }
+
+  const unitsByKey = new Map(scope.units.map((unit) => [unit.key, unit]));
+  const movingNodeKeys = plan.draggedKeys.flatMap((key) => unitsByKey.get(key)?.nodeKeys ?? []);
+  const remainingUnits = plan.remainingKeys.flatMap((key) => {
+    const unit = unitsByKey.get(key);
+    return unit ? [unit] : [];
+  });
+  const rightUnit = remainingUnits[plan.insertAt];
+  const leftUnit = remainingUnits[plan.insertAt - 1];
+
+  if (rightUnit?.physicalParentKey === physicalParentKey) {
+    const anchor = $getNodeByKey(rightUnit.nodeKeys[0]);
 
     if (!anchor) {
       return;
@@ -2101,11 +2622,169 @@ function moveSiblingBlocks(
       const node = $getNodeByKey(key);
 
       if (node) {
-        anchor.insertAfter(node, false);
-        anchor = node;
+        anchor.insertBefore(node, false);
       }
     }
+    return;
+  }
+
+  let anchor = leftUnit?.physicalParentKey === physicalParentKey
+    ? $getNodeByKey(leftUnit.nodeKeys.at(-1) ?? leftUnit.key)
+    : null;
+
+  if (!anchor) {
+    if (remainingUnits.some((unit) => unit.physicalParentKey === physicalParentKey)) {
+      return;
+    }
+
+    for (const key of movingNodeKeys) {
+      const node = $getNodeByKey(key);
+
+      if (node) {
+        parent.append(node);
+      }
+    }
+    return;
+  }
+
+  for (const key of movingNodeKeys) {
+    const node = $getNodeByKey(key);
+
+    if (node) {
+      anchor.insertAfter(node, false);
+      anchor = node;
+    }
+  }
+}
+
+function $moveLogicalUnitsAcrossTransparentLists(
+  scope: LogicalBlockScope,
+  plan: { draggedKeys: NodeKey[]; remainingKeys: NodeKey[]; insertAt: number }
+): void {
+  const host = scope.hostKey ? $getNodeByKey(scope.hostKey) : null;
+  const unitsByKey = new Map(scope.units.map((unit) => [unit.key, unit]));
+  const movingUnits = plan.draggedKeys.flatMap((key) => {
+    const unit = unitsByKey.get(key);
+    return unit ? [unit] : [];
   });
+  const remainingUnits = plan.remainingKeys.flatMap((key) => {
+    const unit = unitsByKey.get(key);
+    return unit ? [unit] : [];
+  });
+  const rightUnit = remainingUnits[plan.insertAt];
+  const leftUnit = remainingUnits[plan.insertAt - 1];
+  const rightNode = rightUnit ? $getNodeByKey(rightUnit.nodeKeys[0]) : null;
+  const leftNode = leftUnit
+    ? $getNodeByKey(leftUnit.nodeKeys.at(-1) ?? leftUnit.key)
+    : null;
+
+  if (
+    movingUnits.length !== plan.draggedKeys.length ||
+    !$isElementNode(host) ||
+    (rightUnit !== undefined && !rightNode) ||
+    (leftUnit !== undefined && !leftNode)
+  ) {
+    return;
+  }
+
+  const records = movingUnits.map((unit, index) => {
+    const nodes = unit.nodeKeys.flatMap((key): LexicalNode[] => {
+      const node = $getNodeByKey(key);
+      return node ? [node] : [];
+    });
+    const sourceList = unit.kind === "list-item" ? $getNodeByKey(unit.physicalParentKey) : null;
+    const previousUnit = movingUnits[index - 1];
+    const previousLastNode = previousUnit
+      ? $getNodeByKey(previousUnit.nodeKeys.at(-1) ?? previousUnit.key)
+      : null;
+    return {
+      joinsPrevious:
+        unit.kind === "list-item" &&
+        previousUnit?.kind === "list-item" &&
+        previousUnit.physicalParentKey === unit.physicalParentKey &&
+        previousLastNode?.getNextSibling()?.getKey() === nodes[0]?.getKey(),
+      nodes,
+      sourceList: $isListNode(sourceList) ? sourceList : undefined,
+      unit
+    };
+  });
+
+  if (records.some((record) => record.nodes.length !== record.unit.nodeKeys.length)) {
+    return;
+  }
+
+  const sourceLists = new Set(records.flatMap((record) => (record.sourceList ? [record.sourceList] : [])));
+  const segments: LexicalNode[] = [];
+  let currentListFragment: ReturnType<typeof $createListNode> | undefined;
+
+  for (const record of records) {
+    if (record.unit.kind !== "list-item" || !record.sourceList || !record.unit.listType) {
+      currentListFragment = undefined;
+      const node = record.nodes[0];
+
+      if (node) {
+        segments.push(node);
+      }
+      continue;
+    }
+
+    if (!record.joinsPrevious || !currentListFragment || currentListFragment.getListType() !== record.unit.listType) {
+      currentListFragment = $createListNode(record.unit.listType, record.unit.listStart ?? 1);
+      copyListPresentation(record.sourceList, currentListFragment);
+      segments.push(currentListFragment);
+    }
+
+    currentListFragment.append(...record.nodes);
+  }
+
+  for (const sourceList of sourceLists) {
+    if (sourceList.getChildrenSize() === 0) {
+      sourceList.remove();
+    }
+  }
+
+  if (segments.length === 0) {
+    return;
+  }
+
+  let anchor = segments[0];
+
+  if (rightUnit && rightNode) {
+    if (rightUnit.kind === "list-item") {
+      const previousNode = rightNode.getPreviousSibling();
+      const targetList = rightNode.getParent();
+
+      if ($isListItemNode(previousNode)) {
+        previousNode.insertAfter(anchor, false);
+      } else if ($isListNode(targetList)) {
+        targetList.insertBefore(anchor, false);
+      } else {
+        return;
+      }
+    } else {
+      rightNode.insertBefore(anchor, false);
+    }
+  } else if (leftUnit && leftNode) {
+    leftNode.insertAfter(anchor, false);
+  } else {
+    host.append(anchor);
+  }
+
+  for (const segment of segments.slice(1)) {
+    anchor.insertAfter(segment, false);
+    anchor = segment;
+  }
+}
+
+function copyListPresentation(
+  source: ReturnType<typeof $createListNode>,
+  target: ReturnType<typeof $createListNode>
+): void {
+  target.setDirection(source.getDirection());
+  target.setFormat(source.getFormatType());
+  target.setIndent(source.getIndent());
+  target.setTextFormat(source.getTextFormat());
+  target.setTextStyle(source.getTextStyle());
 }
 
 function getBlockMovePlan(
@@ -2135,26 +2814,6 @@ function getBlockMovePlan(
   return areNodeKeyListsEqual(unitKeys, proposedKeys)
     ? undefined
     : { draggedKeys, remainingKeys, insertAt };
-}
-
-function getBlockUnitRect(
-  editor: ReturnType<typeof useLexicalComposerContext>[0],
-  unit: BlockUnit
-): DOMRect | undefined {
-  const rects = unit.nodeKeys.flatMap((key): DOMRect[] => {
-    const element = editor.getElementByKey(key);
-    return element ? [element.getBoundingClientRect()] : [];
-  });
-
-  if (rects.length === 0) {
-    return undefined;
-  }
-
-  const left = Math.min(...rects.map((rect) => rect.left));
-  const top = Math.min(...rects.map((rect) => rect.top));
-  const right = Math.max(...rects.map((rect) => rect.right));
-  const bottom = Math.max(...rects.map((rect) => rect.bottom));
-  return new DOMRect(left, top, right - left, bottom - top);
 }
 
 function getVisualBlockRect(element: HTMLElement): DOMRect {
