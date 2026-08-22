@@ -184,6 +184,7 @@ const BLOCK_DRAG_DATA_FORMAT = "application/x-markflow-block-key";
 const BLOCK_HANDLE_HEIGHT = 20;
 const BLOCK_HANDLE_PAIR_WIDTH = 42;
 const BLOCK_HANDLE_GAP = 6;
+const BLOCK_HANDLE_HIDE_DELAY_MS = 350;
 const BLOCK_DRAG_SCROLL_EDGE = 64;
 const BLOCK_DRAG_SCROLL_MAX_SPEED = 900;
 
@@ -297,6 +298,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
   const nativeDragEndCleanupRef = useRef<(() => void) | undefined>(undefined);
   const commandMenuRef = useRef<CommandMenuState | undefined>(undefined);
   const ignoredSlashMarkerRef = useRef<SlashMarker | undefined>(undefined);
+  const handleHideTimeoutRef = useRef<number | undefined>(undefined);
   const handlesRef = useRef<BlockHandle[]>([]);
   const selectedBlockKeysRef = useRef<NodeKey[]>([]);
   const selectedBlockScopeKeyRef = useRef<NodeKey | undefined>(undefined);
@@ -314,6 +316,32 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
   const [commandMenu, setCommandMenu] = useState<CommandMenuState | undefined>();
   const [commandQuery, setCommandQuery] = useState("");
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
+
+  const cancelHandleHide = useCallback(() => {
+    if (handleHideTimeoutRef.current !== undefined) {
+      window.clearTimeout(handleHideTimeoutRef.current);
+      handleHideTimeoutRef.current = undefined;
+    }
+  }, []);
+
+  const showHandle = useCallback(
+    (key: NodeKey) => {
+      cancelHandleHide();
+      setHoveredHandleKey(key);
+    },
+    [cancelHandleHide]
+  );
+
+  const scheduleHandleHide = useCallback(() => {
+    if (handleHideTimeoutRef.current !== undefined) {
+      return;
+    }
+
+    handleHideTimeoutRef.current = window.setTimeout(() => {
+      handleHideTimeoutRef.current = undefined;
+      setHoveredHandleKey(undefined);
+    }, BLOCK_HANDLE_HIDE_DELAY_MS);
+  }, []);
 
   const stopDragAutoScroll = useCallback(() => {
     dragPointRef.current = undefined;
@@ -512,6 +540,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
       return;
     }
 
+    cancelHandleHide();
     commandMenuRef.current = undefined;
     ignoredSlashMarkerRef.current = undefined;
     finishBlockDrag();
@@ -522,7 +551,7 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
     setHoveredHandleKey(undefined);
     setFocusedHandleKey(undefined);
     commitBlockSelection(undefined, []);
-  }, [commitBlockSelection, finishBlockDrag, isEditable]);
+  }, [cancelHandleHide, commitBlockSelection, finishBlockDrag, isEditable]);
 
   useEffect(() => {
     const root = rootElement;
@@ -589,7 +618,11 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
             right.hotLeft - left.hotLeft ||
             left.hotBottom - left.hotTop - (right.hotBottom - right.hotTop)
         )[0];
-      setHoveredHandleKey(match?.key);
+      if (match) {
+        showHandle(match.key);
+      } else {
+        scheduleHandleHide();
+      }
     };
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -601,7 +634,14 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
       }
     };
 
-    const handlePointerLeave = () => setHoveredHandleKey(undefined);
+    const handlePointerLeave = () => {
+      if (hoverFrame !== undefined) {
+        window.cancelAnimationFrame(hoverFrame);
+        hoverFrame = undefined;
+      }
+
+      scheduleHandleHide();
+    };
 
     scroller.addEventListener("pointermove", handlePointerMove, { passive: true });
     scroller.addEventListener("pointerleave", handlePointerLeave);
@@ -612,8 +652,10 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
       if (hoverFrame !== undefined) {
         window.cancelAnimationFrame(hoverFrame);
       }
+
+      cancelHandleHide();
     };
-  }, [isEditable, rootElement]);
+  }, [cancelHandleHide, isEditable, rootElement, scheduleHandleHide, showHandle]);
 
   const startMarqueeSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1517,6 +1559,8 @@ function MarkflowDraggableBlocks({ editorModule, realm }: { editorModule: MdxEdi
             }
           }}
           onFocusCapture={() => setFocusedHandleKey(handle.key)}
+          onPointerEnter={() => showHandle(handle.key)}
+          onPointerLeave={scheduleHandleHide}
           style={{ left: `${handle.left}px`, top: `${handle.top}px` }}
         >
           <button
