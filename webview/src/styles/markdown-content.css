@@ -1,0 +1,405 @@
+.raw-markdown-editor,
+.mdxeditor-toolbar,
+.mdxeditor-root-contenteditable > div,
+.markflow-rich-editor .cm-sourceView,
+.markflow-rich-editor .cm-scroller,
+.markflow-editor pre {
+  scrollbar-color: var(--panel-border) var(--app-bg);
+  scrollbar-width: thin;
+}
+
+.raw-markdown-editor::-webkit-scrollbar,
+.mdxeditor-toolbar::-webkit-scrollbar,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar,
+.markflow-editor pre::-webkit-scrollbar {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.raw-markdown-editor::-webkit-scrollbar-track,
+.mdxeditor-toolbar::-webkit-scrollbar-track,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar-track,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar-track,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar-track,
+.markflow-editor pre::-webkit-scrollbar-track {
+  background: var(--app-bg);
+}
+
+.raw-markdown-editor::-webkit-scrollbar-thumb,
+.mdxeditor-toolbar::-webkit-scrollbar-thumb,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar-thumb,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar-thumb,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar-thumb,
+.markflow-editor pre::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border: 2px solid var(--app-bg);
+  border-radius: 999px;
+}
+
+.raw-markdown-editor::-webkit-scrollbar-thumb:hover,
+.mdxeditor-toolbar::-webkit-scrollbar-thumb:hover,
+.mdxeditor-root-contenteditable > div::-webkit-scrollbar-thumb:hover,
+.markflow-rich-editor .cm-sourceView::-webkit-scrollbar-thumb:hover,
+.markflow-rich-editor .cm-scroller::-webkit-scrollbar-thumb:hover,
+.markflow-editor pre::-webkit-scrollbar-thumb:hover {
+  background: #777777;
+}
+
+.markflow-editor:focus {
+  outline: none;
+}
+
+.markflow-editor h1,
+.markflow-editor h2,
+.markflow-editor h3,
+.markflow-editor h4,
+.markflow-editor h5,
+.markflow-editor h6 {
+  color: #f0f6fc;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.markflow-editor h1 {
+  margin-top: 0;
+  font-size: 2.25rem;
+}
+
+.markflow-editor h2 {
+  padding-bottom: 0.35rem;
+  margin-top: 2rem;
+  font-size: 1.65rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.markflow-editor h3 {
+  margin-top: 1.6rem;
+  font-size: 1.25rem;
+}
+
+.markflow-editor p,
+.markflow-editor li {
+  font-size: 1rem;
+}
+
+.markflow-editor a {
+  color: var(--accent);
+}
+
+.markflow-editor blockquote {
+  padding: 0.15rem 0 0.15rem 1rem;
+  margin-left: 0;
+  color: var(--text-muted);
+  border-left: 3px solid var(--accent-soft);
+}
+
+
+.markflow-editor code {
+  padding: 0.15rem 0.35rem;
+  color: var(--code-text);
+  background: var(--code-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.3rem;
+}
+
+.markflow-math-node {
+  display: block;
+  margin: 1rem 0;
+}
+
+.markflow-math-node--inline {
+  display: inline;
+  margin: 0;
+}
+
+.markflow-math-widget {
+  display: block;
+  max-width: 100%;
+}
+
+.markflow-math-widget--inline {
+  display: inline;
+}
+
+.markflow-math {
+  color: var(--text-main);
+}
+
+.markflow-math--block {
+  display: block;
+  max-width: 100%;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  color: #f0f6fc;
+  background: var(--code-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.markflow-math--inline {
+  display: inline-block;
+  padding: 0 0.15rem;
+  vertical-align: baseline;
+}
+
+.markflow-math .katex-error {
+  color: var(--danger);
+}
+
+.markflow-math-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  margin-left: 0.45rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  vertical-align: middle;
+}
+
+.markflow-math-widget:hover .markflow-math-actions,
+.markflow-math-widget:focus-within .markflow-math-actions {
+  opacity: 1;
+}
+
+.markflow-math-action,
+.markflow-math-source-button {
+  min-height: 1.45rem;
+  padding: 0 0.45rem;
+  color: var(--text-main);
+  cursor: pointer;
+  background: #353535;
+  border: 1px solid var(--panel-border);
+  border-radius: 0.3rem;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.markflow-math-action:hover,
+.markflow-math-source-button:hover {
+  color: #ffffff;
+  background: #343434;
+}
+
+.markflow-math-action:focus-visible,
+.markflow-math-source-button:focus-visible,
+.markflow-math-source-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.markflow-math-source-panel {
+  display: grid;
+  gap: 0.5rem;
+  max-width: min(100%, 42rem);
+  padding: 0.55rem;
+  margin-top: 0.45rem;
+  color: var(--text-main);
+  background: #202020;
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.markflow-math-widget--inline .markflow-math-source-panel {
+  display: inline-grid;
+  min-width: min(24rem, 90vw);
+  margin: 0 0 0 0.45rem;
+  vertical-align: middle;
+}
+
+.markflow-math-source-input {
+  width: 100%;
+  min-height: 2.1rem;
+  padding: 0.45rem 0.55rem;
+  overflow: auto;
+  color: var(--text-main);
+  resize: vertical;
+  background: var(--code-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.35rem;
+  caret-color: var(--accent);
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 0.83rem;
+  line-height: 1.45;
+}
+
+.markflow-math-source-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.markflow-editor pre {
+  padding: 1rem;
+  overflow: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.markflow-editor pre code {
+  padding: 0;
+  color: var(--text-main);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.markflow-editor table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  table-layout: auto !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  border-collapse: collapse;
+  border: 1px solid var(--panel-border);
+  scrollbar-color: var(--panel-border) var(--app-bg);
+  scrollbar-width: thin;
+}
+
+.markflow-editor table::-webkit-scrollbar {
+  height: 0.7rem;
+}
+
+.markflow-editor table::-webkit-scrollbar-track {
+  background: var(--app-bg);
+}
+
+.markflow-editor table::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border: 2px solid var(--app-bg);
+  border-radius: 999px;
+}
+
+.markflow-editor th,
+.markflow-editor td {
+  min-width: 11rem;
+  max-width: 24rem;
+  padding: 0.55rem 0.65rem;
+  overflow-wrap: break-word;
+  vertical-align: top;
+  white-space: normal;
+  word-break: normal;
+  border: 1px solid var(--panel-border);
+}
+
+.markflow-editor th {
+  color: #ffffff;
+  background: #242424;
+}
+
+.markflow-editor table th[class*="tableToolsColumn"],
+.markflow-editor table td[class*="toolCell"],
+.markflow-editor table th[class*="toolCell"],
+.markflow-editor table > thead > tr > th:first-child,
+.markflow-editor table > thead > tr > th:last-child,
+.markflow-editor table > tbody > tr > th[data-tool-cell]:last-child,
+.markflow-editor table > tfoot > tr > th:first-child,
+.markflow-editor table > tfoot > tr > th:last-child {
+  width: 2.5rem !important;
+  min-width: 2.5rem !important;
+  max-width: 2.5rem !important;
+  padding: 0.35rem;
+  overflow: visible;
+  text-align: center;
+}
+
+.markflow-editor table [data-tool-cell],
+.markflow-editor table th[class*="tableToolsColumn"],
+.markflow-editor table td[class*="toolCell"],
+.markflow-editor table th[class*="toolCell"] {
+  background: #222222;
+}
+
+.markflow-editor table [data-tool-cell] button,
+.markflow-editor table button[class*="tableColumnEditorTrigger"],
+.markflow-editor table button[class*="addRowButton"],
+.markflow-editor table button[class*="addColumnButton"],
+.markflow-editor table button[class*="iconButton"] {
+  display: inline-grid !important;
+  place-items: center;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  margin: 0 auto;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: 0.3rem;
+}
+
+.markflow-editor table:hover [data-tool-cell] button,
+.markflow-editor table:hover button[class*="tableColumnEditorTrigger"],
+.markflow-editor table:hover button[class*="addRowButton"],
+.markflow-editor table:hover button[class*="addColumnButton"],
+.markflow-editor table:hover button[class*="iconButton"] {
+  opacity: 0.55 !important;
+}
+
+.markflow-editor table [data-tool-cell] button:hover,
+.markflow-editor table button[class*="tableColumnEditorTrigger"]:hover,
+.markflow-editor table button[class*="addRowButton"]:hover,
+.markflow-editor table button[class*="addColumnButton"]:hover,
+.markflow-editor table button[class*="iconButton"]:hover,
+.markflow-editor table button[class*="tableColumnEditorTrigger"][data-active="true"],
+.markflow-editor table button[class*="tableColumnEditorTrigger"][data-state="open"] {
+  color: #ffffff;
+  background: #383838;
+  opacity: 1 !important;
+}
+
+.markflow-editor table button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.markflow-editor table > tbody > tr > td:not([data-tool-cell])[data-active="true"],
+.markflow-editor table > tbody > tr > th:not([data-tool-cell])[data-active="true"] {
+  background: #292929;
+  outline: 1px solid #5a5a5a !important;
+  outline-offset: -1px;
+}
+
+.markflow-editor hr {
+  border: 0;
+  border-top: 1px solid var(--panel-border);
+}
+
+.markflow-editor img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markflow-editor input[type="checkbox"] {
+  accent-color: var(--success);
+}
+
+.cm-editor,
+.cm-scroller,
+.cm-gutters {
+  color: var(--text-main);
+  background: var(--code-bg);
+}
+
+.cm-editor {
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.cm-gutters {
+  border-right-color: var(--panel-border);
+}
+
+.cm-activeLine,
+.cm-activeLineGutter {
+  background: #353535;
+}
+

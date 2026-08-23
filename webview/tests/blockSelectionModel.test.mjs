@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveHierarchicalBlockSelection } from "../src/blockSelectionModel.ts";
+import {
+  areBlockKeyListsEqual,
+  resolveHierarchicalBlockSelection
+} from "../src/blockSelectionModel.ts";
 
 function createModel() {
   const scopeDefinitions = [
@@ -66,6 +69,12 @@ test("recomputing a smaller marquee demotes to the nested scope", () => {
     scopeKey: "a-children",
     keys: ["a1", "a2"]
   });
+});
+
+test("block key list equality preserves order", () => {
+  assert.equal(areBlockKeyListsEqual(["a", "b"], ["a", "b"]), true);
+  assert.equal(areBlockKeyListsEqual(["a", "b"], ["b", "a"]), false);
+  assert.equal(areBlockKeyListsEqual(["a"], ["a", "b"]), false);
 });
 
 test("returns no selection when the marquee no longer intersects a row", () => {

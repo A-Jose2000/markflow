@@ -1,0 +1,388 @@
+.markflow-editor {
+  --lexical-indent-base-value: 40px;
+  --markflow-block-indent-width: 40px;
+  position: relative;
+  width: min(100%, 58rem);
+  min-height: 100%;
+  margin: 0 auto;
+  overflow: visible;
+  padding: clamp(1.25rem, 3vw, 3rem) clamp(1rem, 5vw, 3.5rem) 5rem clamp(4.25rem, 7vw, 5.25rem);
+  color: var(--text-main);
+  caret-color: var(--accent);
+  line-height: 1.7;
+}
+
+.markflow-editor [data-markflow-outline-offset="true"] {
+  max-width: calc(100% - var(--markflow-outline-offset));
+  margin-inline-start: var(--markflow-outline-offset);
+}
+
+.markflow-editor [data-markflow-outline-element-indent="true"] {
+  padding-inline-start: var(--markflow-outline-offset) !important;
+}
+
+.markflow-editor [data-markflow-collapsed-descendant="true"] {
+  display: none !important;
+}
+
+.markflow-editor li[data-markflow-list-marker]::marker {
+  content: attr(data-markflow-list-marker) ". ";
+}
+
+.markflow-block-toggle-button {
+  position: absolute;
+  z-index: 7;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.markflow-block-toggle-button:hover,
+.markflow-block-toggle-button:focus-visible {
+  color: #ffffff;
+  background: #383838;
+}
+
+.markflow-block-toggle-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.markflow-block-toggle-button span {
+  display: block;
+  font-size: 1rem;
+  line-height: 1;
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.markflow-block-toggle-button[data-state="open"] span {
+  transform: rotate(90deg);
+}
+
+.markflow-block-controls {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.markflow-block-controls[data-visible="true"],
+.markflow-block-controls[data-selected="true"],
+.markflow-block-controls[data-dragging="true"],
+.markflow-block-controls:hover,
+.markflow-block-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.markflow-block-controls[data-selected="true"] {
+  opacity: 1;
+}
+
+.markflow-block-controls[data-selected="true"] .markflow-block-drag-handle {
+  color: #ffffff;
+  background: #383838;
+  border-color: var(--accent);
+}
+
+.markflow-block-add-button,
+.markflow-block-drag-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  color: var(--text-muted);
+  background: #242424;
+  border: 1px solid #444444;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.28);
+  pointer-events: none;
+}
+
+.markflow-block-controls[data-visible="true"] .markflow-block-add-button,
+.markflow-block-controls[data-visible="true"] .markflow-block-drag-handle,
+.markflow-block-controls[data-selected="true"] .markflow-block-add-button,
+.markflow-block-controls[data-selected="true"] .markflow-block-drag-handle,
+.markflow-block-controls[data-dragging="true"] .markflow-block-add-button,
+.markflow-block-controls[data-dragging="true"] .markflow-block-drag-handle,
+.markflow-block-controls:focus-within .markflow-block-add-button,
+.markflow-block-controls:focus-within .markflow-block-drag-handle {
+  pointer-events: auto;
+}
+
+.markflow-block-add-button {
+  cursor: pointer;
+}
+
+.markflow-block-drag-handle {
+  cursor: grab;
+}
+
+.markflow-block-handle-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.markflow-block-selection-gutter {
+  position: absolute;
+  z-index: 1;
+  cursor: crosshair;
+  pointer-events: auto;
+}
+
+.markflow-block-selection-marquee {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  background: rgb(88 166 255 / 0.1);
+  border: 1px solid rgb(88 166 255 / 0.8);
+  border-radius: 0.25rem;
+}
+
+.markflow-block-selection-highlight {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: rgb(88 166 255 / 0.08);
+  border: 1px solid rgb(88 166 255 / 0.72);
+  border-radius: 3px;
+}
+
+body.markflow-blocks-are-selecting,
+body.markflow-blocks-are-selecting * {
+  cursor: crosshair !important;
+  user-select: none !important;
+}
+
+.markflow-block-add-button:hover,
+.markflow-block-add-button:focus-visible,
+.markflow-block-drag-handle:hover,
+.markflow-block-drag-handle:focus-visible {
+  color: #ffffff;
+  background: #383838;
+  border-color: #666666;
+}
+
+.markflow-block-drag-handle:active {
+  cursor: grabbing;
+  opacity: 1;
+}
+
+.markflow-block-add-button:focus-visible,
+.markflow-block-drag-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.markflow-block-add-button svg,
+.markflow-block-drag-handle-glyph {
+  display: block;
+  width: 12px;
+  height: 12px;
+  overflow: visible;
+}
+
+.markflow-block-add-button svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+
+.markflow-block-drag-handle-glyph {
+  fill: currentColor;
+}
+
+.markflow-block-command-menu {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(20rem, calc(100vw - 2rem));
+  max-height: min(25rem, calc(100vh - 1rem));
+  overflow: hidden;
+  color: var(--text-main);
+  background: #252525;
+  border: 1px solid #464646;
+  border-radius: 0.65rem;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 0.45);
+  pointer-events: auto;
+}
+
+.markflow-block-command-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.markflow-block-command-search svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-linecap: round;
+  stroke-width: 1.45;
+}
+
+.markflow-block-command-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: var(--text-main);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 0.84rem;
+}
+
+.markflow-block-command-search input::placeholder {
+  color: #858585;
+}
+
+.markflow-block-command-caption {
+  padding: 0.55rem 0.7rem 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.markflow-block-command-list {
+  display: grid;
+  gap: 0.18rem;
+  min-height: 0;
+  padding: 0.25rem 0.4rem 0.45rem;
+  overflow-y: auto;
+  scrollbar-color: #555555 #252525;
+  scrollbar-width: thin;
+}
+
+.markflow-block-command-option {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 0.4rem;
+}
+
+.markflow-block-command-option:hover,
+.markflow-block-command-option[data-active="true"] {
+  color: #ffffff;
+  background: #383838;
+}
+
+.markflow-block-command-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.markflow-block-command-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  color: #dedede;
+  background: #303030;
+  border: 1px solid #484848;
+  border-radius: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.markflow-block-command-option > span:last-child {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.markflow-block-command-option strong,
+.markflow-block-command-option small {
+  overflow: hidden;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markflow-block-command-option strong {
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.markflow-block-command-option small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.markflow-block-command-empty,
+.markflow-block-command-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.markflow-block-command-empty {
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.markflow-block-command-hint {
+  padding: 0.45rem 0.65rem;
+  border-top: 1px solid var(--panel-border);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.markflow-block-drop-line {
+  position: absolute;
+  z-index: 5;
+  height: 0.2rem;
+  pointer-events: none;
+  background: var(--accent);
+  border-radius: 999px;
+  opacity: 1;
+}
+

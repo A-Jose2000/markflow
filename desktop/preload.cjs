@@ -2,6 +2,8 @@
 
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
+// Electron's sandboxed preload loader cannot require local CommonJS modules.
+// desktop/tests/channels.test.cjs keeps this literal in sync with channels.cjs.
 const CHANNELS = Object.freeze({
   chooseFolder: "markflow-desktop:choose-folder",
   listDirectory: "markflow-desktop:list-directory",

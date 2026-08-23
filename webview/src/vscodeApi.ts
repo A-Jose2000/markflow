@@ -1,4 +1,4 @@
-import type { WebviewToExtensionMessage } from "./markdownMessages";
+import type { WebviewToExtensionMessage } from "../../shared/markdownMessages";
 
 interface VscodeApi {
   postMessage(message: WebviewToExtensionMessage): void;

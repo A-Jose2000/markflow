@@ -102,6 +102,9 @@ pnpm build:apk
 
 Use the VS Code launch configuration named `Run Extension` to open an Extension Development Host.
 
+The codebase boundaries and dependency rules are documented in
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ```bash
 npm run watch
 ```

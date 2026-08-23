@@ -13,7 +13,7 @@ import { mathFromMarkdown, mathToMarkdown } from "mdast-util-math";
 import { math } from "micromark-extension-math";
 import { useEffect, useMemo, useState, type JSX } from "react";
 import katex from "katex";
-import type { MdxEditorModule } from "./App";
+import type { MdxEditorModule } from "./editorContract";
 import type { LexicalExportVisitor, MdastImportVisitor, RealmPlugin } from "@mdxeditor/editor";
 
 type MathMdastNode = InlineMath | FlowMath;

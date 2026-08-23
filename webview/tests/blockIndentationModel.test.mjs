@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fromMarkdown } from "mdast-util-from-markdown";
-import { toMarkdown } from "mdast-util-to-markdown";
 
 import {
+  changeOutlineDepth,
+  collectCollapsedOutlineKeys,
   collectOutlineSubtreeKeys,
   getOutlineDragDepthDelta,
-  LEGACY_MARKFLOW_BLOCK_DEPTH_DEFINITION_PREFIX,
-  MARKFLOW_BLOCK_DEPTH_DEFINITION_ID,
-  MARKFLOW_EMPTY_BLOCK_DEFINITION_ID,
-  readMarkflowBlockMarker,
   resolveOutlineInsertion
 } from "../src/blockIndentationModel.ts";
 
@@ -28,6 +24,61 @@ test("collects a parent with every descendant in its subtree", () => {
 
 test("combines selected sibling roots without losing nested descendants", () => {
   assert.deepEqual([...collectOutlineSubtreeKeys(outline, ["b", "d"])], ["b", "c", "d"]);
+});
+
+test("indents a mixed subtree beneath its previous sibling", () => {
+  assert.deepEqual(changeOutlineDepth(outline, ["d"], 1, 7), {
+    rows: [
+      { key: "a", depth: 0 },
+      { key: "b", depth: 1 },
+      { key: "c", depth: 2 },
+      { key: "d", depth: 2 },
+      { key: "e", depth: 0 }
+    ],
+    rootKeys: ["d"]
+  });
+});
+
+test("outdents a subtree after the old parent's remaining children", () => {
+  assert.deepEqual(changeOutlineDepth(outline, ["b"], -1, 7), {
+    rows: [
+      { key: "a", depth: 0 },
+      { key: "d", depth: 1 },
+      { key: "b", depth: 0 },
+      { key: "c", depth: 1 },
+      { key: "e", depth: 0 }
+    ],
+    rootKeys: ["b"]
+  });
+});
+
+test("outdents consecutive selected siblings as one ordered group", () => {
+  assert.deepEqual(changeOutlineDepth(outline, ["b", "d"], -1, 7), {
+    rows: [
+      { key: "a", depth: 0 },
+      { key: "b", depth: 0 },
+      { key: "c", depth: 1 },
+      { key: "d", depth: 0 },
+      { key: "e", depth: 0 }
+    ],
+    rootKeys: ["b", "d"]
+  });
+});
+
+test("rejects indentation without a previous sibling and at the maximum depth", () => {
+  assert.equal(changeOutlineDepth(outline, ["a"], 1, 7), undefined);
+  assert.equal(changeOutlineDepth([{ key: "a", depth: 0 }, { key: "b", depth: 1 }], ["b"], 1, 1), undefined);
+});
+
+test("collects only descendants of closed toggles", () => {
+  assert.deepEqual(
+    [...collectCollapsedOutlineKeys(outline, new Set(["a"]))],
+    ["b", "c", "d"]
+  );
+  assert.deepEqual(
+    [...collectCollapsedOutlineKeys(outline, new Set(["b"]))],
+    ["c"]
+  );
 });
 
 test("keeps insertion inside a parent while its following descendants continue", () => {
@@ -62,97 +113,10 @@ test("clamps requested depth to one level beyond the predecessor", () => {
   assert.equal(resolveOutlineInsertion(outline, 0, 4)?.depth, 0);
 });
 
-test("recognizes only valid versioned block markers", () => {
-  assert.deepEqual(
-    readMarkflowBlockMarker(
-      { identifier: MARKFLOW_BLOCK_DEPTH_DEFINITION_ID, title: "2", url: "#" },
-      7
-    ),
-    { depth: 2, kind: "depth" }
-  );
-  assert.deepEqual(
-    readMarkflowBlockMarker(
-      { identifier: MARKFLOW_EMPTY_BLOCK_DEFINITION_ID, title: "1", url: "#" },
-      7
-    ),
-    { depth: 1, kind: "empty" }
-  );
-  assert.deepEqual(
-    readMarkflowBlockMarker(
-      { identifier: `${LEGACY_MARKFLOW_BLOCK_DEPTH_DEFINITION_PREFIX}abc`, title: "3", url: "#" },
-      7
-    ),
-    { depth: 3, kind: "depth" }
-  );
-  assert.equal(
-    readMarkflowBlockMarker(
-      { identifier: MARKFLOW_BLOCK_DEPTH_DEFINITION_ID, title: "8", url: "#" },
-      7
-    ),
-    undefined
-  );
-  assert.equal(
-    readMarkflowBlockMarker(
-      { identifier: MARKFLOW_BLOCK_DEPTH_DEFINITION_ID, title: "1", url: "/ordinary-link" },
-      7
-    ),
-    undefined
-  );
-});
-
 test("uses a full-lane drag dead zone before changing outline depth", () => {
   assert.equal(getOutlineDragDepthDelta(51, 40), 0);
   assert.equal(getOutlineDragDepthDelta(52, 40), 1);
   assert.equal(getOutlineDragDepthDelta(91, 40), 1);
   assert.equal(getOutlineDragDepthDelta(92, 40), 2);
   assert.equal(getOutlineDragDepthDelta(-52, 40), -1);
-});
-
-test("keeps empty-block markers distinct from following Markdown blocks", () => {
-  const markdown = toMarkdown({
-    type: "root",
-    children: [
-      { type: "paragraph", children: [{ type: "text", value: "A" }] },
-      {
-        type: "definition",
-        identifier: MARKFLOW_EMPTY_BLOCK_DEFINITION_ID,
-        label: MARKFLOW_EMPTY_BLOCK_DEFINITION_ID,
-        title: "1",
-        url: "#"
-      },
-      { type: "paragraph", children: [] },
-      { type: "paragraph", children: [{ type: "text", value: "E" }] }
-    ]
-  });
-  const parsed = fromMarkdown(markdown);
-
-  assert.deepEqual(parsed.children.map((node) => node.type), ["paragraph", "definition", "paragraph"]);
-  assert.deepEqual(readMarkflowBlockMarker(parsed.children[1], 7), {
-    depth: 1,
-    kind: "empty"
-  });
-  assert.equal(parsed.children[2].type === "paragraph" && parsed.children[2].children[0]?.value, "E");
-});
-
-test("round-trips consecutive and trailing empty-block markers", () => {
-  const marker = (depth) => ({
-    type: "definition",
-    identifier: MARKFLOW_EMPTY_BLOCK_DEFINITION_ID,
-    label: MARKFLOW_EMPTY_BLOCK_DEFINITION_ID,
-    title: String(depth),
-    url: "#"
-  });
-  const markdown = toMarkdown({
-    type: "root",
-    children: [
-      { type: "paragraph", children: [{ type: "text", value: "A" }] },
-      marker(1),
-      marker(2)
-    ]
-  });
-  const parsed = fromMarkdown(markdown);
-
-  assert.deepEqual(parsed.children.map((node) => node.type), ["paragraph", "definition", "definition"]);
-  assert.deepEqual(readMarkflowBlockMarker(parsed.children[1], 7), { depth: 1, kind: "empty" });
-  assert.deepEqual(readMarkflowBlockMarker(parsed.children[2], 7), { depth: 2, kind: "empty" });
 });

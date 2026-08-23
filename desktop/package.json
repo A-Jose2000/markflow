@@ -9,9 +9,11 @@
   "main": "main.cjs",
   "scripts": {
     "build:renderer": "npm --prefix ../webview run build:desktop",
-    "check": "node --check main.cjs && node --check preload.cjs",
+    "check": "npm test && npm run check:bindings && node --check channels.cjs && node --check fileCatalog.cjs && node --check markdownStore.cjs && node --check publicErrors.cjs && node --check requestValidation.cjs && node --check workspacePaths.cjs && node --check main.cjs && node --check main-process/closeCoordinator.cjs && node --check main-process/protocolHandlers.cjs && node --check main-process/workspaceDocumentService.cjs && node --check main-process/workspaceExplorerService.cjs && node --check main-process/workspaceService.cjs && node --check main-process/workspaceSessionRegistry.cjs && node --check preload.cjs",
+    "check:bindings": "tsc --ignoreConfig --allowJs --checkJs --noEmit --skipLibCheck --noImplicitAny false --strictNullChecks false --module Node16 --moduleResolution Node16 --target ES2022 main.cjs main-process/closeCoordinator.cjs main-process/protocolHandlers.cjs main-process/workspaceDocumentService.cjs main-process/workspaceExplorerService.cjs main-process/workspaceService.cjs main-process/workspaceSessionRegistry.cjs preload.cjs",
     "start": "npm run build:renderer && electron .",
-    "package:win": "npm run build:renderer && electron-builder --win"
+    "package:win": "npm run build:renderer && electron-builder --win",
+    "test": "node --test tests/*.test.cjs"
   },
   "devDependencies": {
     "electron": "^43.2.0",
@@ -35,8 +37,15 @@
       "output": "release"
     },
     "files": [
+      "channels.cjs",
+      "fileCatalog.cjs",
+      "markdownStore.cjs",
       "main.cjs",
+      "main-process/**",
       "preload.cjs",
+      "publicErrors.cjs",
+      "requestValidation.cjs",
+      "workspacePaths.cjs",
       "icon.ico",
       "dist/renderer/**"
     ],

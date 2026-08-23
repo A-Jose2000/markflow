@@ -1,0 +1,359 @@
+.app-topbar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 2.65rem;
+  padding: 0.4rem 0.6rem;
+  background: #202020;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.topbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.document-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-switcher {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(3rem, auto));
+  flex: 0 0 auto;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  background: var(--app-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.45rem;
+}
+
+.mode-switcher button {
+  min-height: 1.8rem;
+  padding: 0 0.55rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 0.3rem;
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.mode-switcher button:hover:not(:disabled),
+.mode-switcher button[data-active="true"] {
+  color: #ffffff;
+  background: #353535;
+}
+
+.mode-switcher button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mode-switcher button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.editor-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.fallback-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-main);
+  background: var(--app-bg);
+}
+
+.fallback-banner {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.75rem;
+  color: var(--text-muted);
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 0.82rem;
+}
+
+.fallback-banner strong {
+  color: var(--text-main);
+}
+
+.fallback-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.raw-markdown-editor {
+  width: min(100%, 58rem);
+  height: 100%;
+  min-height: 0;
+  padding: clamp(1.25rem, 3vw, 3rem) clamp(1rem, 5vw, 3.5rem) 5rem;
+  margin: 0 auto;
+  overflow: auto;
+  color: var(--text-main);
+  resize: none;
+  background: var(--app-bg);
+  border: 0;
+  outline: 0;
+  caret-color: var(--accent);
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 0.94rem;
+  line-height: 1.65;
+}
+
+.rich-editor-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@keyframes loading-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(240%);
+  }
+}
+
+.mdxeditor {
+  --baseBase: #191919;
+  --baseBg: #232323;
+  --baseBgActive: #353535;
+  --baseBorder: #3b3b3b;
+  --baseBorderHover: #747474;
+  --basePageBg: #202020;
+  --baseText: #c9d1d9;
+  --baseTextContrast: #e6edf3;
+  --accentBase: #58a6ff;
+  --accentBg: #1f6feb;
+  --accentText: #79c0ff;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-main);
+  background: var(--app-bg);
+}
+
+.markflow-rich-editor,
+.markflow-rich-editor .mdxeditor-diff-source-wrapper,
+.markflow-rich-editor .mdxeditor-rich-text-editor {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.markflow-rich-editor .mdxeditor-diff-source-wrapper {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.markflow-rich-editor .mdxeditor-rich-text-editor {
+  position: relative;
+}
+
+.markflow-rich-editor .mdxeditor-source-editor,
+.markflow-rich-editor .cm-editor,
+.markflow-rich-editor .cm-scroller {
+  min-height: 0;
+  height: 100%;
+}
+
+.mdxeditor-toolbar {
+  gap: 0.2rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.6rem;
+  overflow-x: auto;
+  color: var(--text-main) !important;
+  background: var(--panel-bg) !important;
+  border: 0;
+  border-bottom: 1px solid var(--panel-border);
+  border-radius: 0;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.mdxeditor-toolbar button,
+.mdxeditor-toolbar [role="button"],
+.mdxeditor-toolbar [data-toolbar-item],
+.mdxeditor-toolbar [data-radix-collection-item] {
+  min-width: 2rem;
+  min-height: 2rem;
+  color: var(--text-main) !important;
+  background: transparent !important;
+  border-radius: 0.35rem;
+}
+
+.mdxeditor-toolbar button *,
+.mdxeditor-toolbar [role="button"] *,
+.mdxeditor-toolbar [data-toolbar-item] *,
+.mdxeditor-toolbar [data-radix-collection-item] *,
+.mdxeditor-toolbar span,
+.mdxeditor-toolbar svg {
+  color: currentColor !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.mdxeditor-toolbar button:hover,
+.mdxeditor-toolbar [role="button"]:hover,
+.mdxeditor-toolbar [data-toolbar-item]:hover,
+.mdxeditor-toolbar [data-radix-collection-item]:hover,
+.mdxeditor-toolbar button[data-state="on"],
+.mdxeditor-toolbar [data-state="on"] {
+  color: #ffffff !important;
+  background: #353535 !important;
+}
+
+.mdxeditor-toolbar button:disabled,
+.mdxeditor-toolbar [aria-disabled="true"],
+.mdxeditor-toolbar [data-disabled] {
+  color: #777777 !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.mdxeditor-toolbar button:disabled *,
+.mdxeditor-toolbar [aria-disabled="true"] *,
+.mdxeditor-toolbar [data-disabled] * {
+  color: currentColor !important;
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.mdxeditor-toolbar button:focus-visible,
+.mdxeditor-toolbar [role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mdxeditor-toolbar svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.mdxeditor-select-content,
+.mdxeditor-popup-container,
+.mdxeditor-popup-container [role="dialog"],
+.mdxeditor-popup-container [role="listbox"],
+[data-radix-popper-content-wrapper] [role="listbox"],
+[data-radix-popper-content-wrapper] [role="option"] {
+  color: var(--text-main) !important;
+  background: var(--panel-bg) !important;
+  border-color: var(--panel-border) !important;
+}
+
+[data-radix-popper-content-wrapper] [role="option"]:hover,
+[data-radix-popper-content-wrapper] [role="option"][data-highlighted] {
+  color: #ffffff !important;
+  background: #353535 !important;
+}
+
+.mdxeditor-popup-container [class*="tableColumnEditorPopoverContent"] {
+  color: var(--text-main) !important;
+  background: #252525 !important;
+  border: 1px solid var(--panel-border) !important;
+  border-radius: 0.45rem !important;
+  box-shadow: 0 0.7rem 1.8rem rgb(0 0 0 / 0.3);
+}
+
+.mdxeditor-popup-container [class*="tableColumnEditorPopoverContent"] [class*="popoverArrow"] {
+  fill: #252525;
+}
+
+.mdxeditor-popup-container [class*="tableColumnEditorToolbar"] {
+  gap: 0.2rem;
+  padding: 0.25rem;
+  color: var(--text-main);
+  background: transparent;
+}
+
+.mdxeditor-popup-container [class*="tableColumnEditorToolbar"] button,
+.mdxeditor-popup-container [class*="toggleGroupRoot"] button {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  color: var(--text-main) !important;
+  background: transparent !important;
+  border-radius: 0.3rem;
+}
+
+.mdxeditor-popup-container [class*="tableColumnEditorToolbar"] button:hover,
+.mdxeditor-popup-container [class*="toggleGroupRoot"] button:hover {
+  color: #ffffff !important;
+  background: #353535 !important;
+}
+
+.mdxeditor-popup-container [class*="tableColumnEditorToolbar"] button[data-state="on"],
+.mdxeditor-popup-container [class*="toggleGroupRoot"] button[data-state="on"],
+.mdxeditor-popup-container [class*="tableColumnEditorToolbar"] button:active,
+.mdxeditor-popup-container [class*="toggleGroupRoot"] button:active {
+  color: #ffffff !important;
+  background: #383838 !important;
+}
+
+.mdxeditor-popup-container [class*="tableColumnEditorToolbar"] svg,
+.mdxeditor-popup-container [class*="toggleGroupRoot"] svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.mdxeditor-root-contenteditable {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mdxeditor-root-contenteditable > div {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+

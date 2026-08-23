@@ -91,12 +91,14 @@
     "build:extension": "tsc -p tsconfig.json",
     "build:webview": "npm --prefix webview run build",
     "build:desktop": "npm --prefix webview run build:desktop",
+    "check:architecture": "node --test scripts/tests/*.test.mjs && node scripts/check-source-boundaries.mjs && node scripts/check-dependencies.mjs",
     "desktop": "npm --prefix desktop start",
-    "package:windows": "npm --prefix desktop run package:win",
+    "package:windows": "npm run check && npm --prefix desktop run package:win",
+    "typecheck:mobile": "node scripts/run-mobile-typecheck.mjs",
     "typecheck:webview": "npm --prefix webview run typecheck",
     "watch": "concurrently \"tsc -watch -p tsconfig.json\" \"npm --prefix webview run dev\"",
-    "package": "node scripts/package-extension.mjs",
-    "check": "npm --prefix webview test && npm run typecheck:webview && npm run build && npm run build:desktop && npm --prefix desktop run check"
+    "package": "npm run check && node scripts/package-extension.mjs",
+    "check": "npm run check:architecture && npm --prefix webview test && npm run typecheck:webview && npm run typecheck:mobile && npm run build && npm run build:desktop && npm --prefix desktop run check"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

@@ -10,47 +10,9 @@ export interface OutlineInsertion<Key extends string = string> {
   parentKey?: Key;
 }
 
-export const MARKFLOW_BLOCK_DEPTH_DEFINITION_ID = "markflow-v1-block-depth";
-export const MARKFLOW_EMPTY_BLOCK_DEFINITION_ID = "markflow-v1-empty-block";
-export const LEGACY_MARKFLOW_BLOCK_DEPTH_DEFINITION_PREFIX = "markflow-block-depth-";
-
-export type MarkflowBlockMarkerKind = "depth" | "empty";
-
-export interface MarkflowBlockMarker {
-  depth: number;
-  kind: MarkflowBlockMarkerKind;
-}
-
-export interface MarkdownDefinitionLike {
-  identifier: string;
-  title?: string | null;
-  url: string;
-}
-
-export function readMarkflowBlockMarker(
-  definition: MarkdownDefinitionLike,
-  maximumDepth: number
-): MarkflowBlockMarker | undefined {
-  const identifier = definition.identifier.toLocaleLowerCase();
-  const kind = identifier === MARKFLOW_EMPTY_BLOCK_DEFINITION_ID
-    ? "empty"
-    : identifier === MARKFLOW_BLOCK_DEPTH_DEFINITION_ID ||
-        identifier.startsWith(LEGACY_MARKFLOW_BLOCK_DEPTH_DEFINITION_PREFIX)
-      ? "depth"
-      : undefined;
-  const depth = Number(definition.title);
-
-  if (
-    !kind ||
-    definition.url !== "#" ||
-    !Number.isInteger(depth) ||
-    depth < 1 ||
-    depth > maximumDepth
-  ) {
-    return undefined;
-  }
-
-  return { depth, kind };
+export interface OutlineMutation<Key extends string = string> {
+  rows: OutlineRow<Key>[];
+  rootKeys: Key[];
 }
 
 export function getOutlineDragDepthDelta(deltaX: number, indentWidth: number): number {
@@ -96,6 +58,149 @@ export function collectOutlineSubtreeKeys<Key extends string>(
   }
 
   return subtreeKeys;
+}
+
+export function collectCollapsedOutlineKeys<Key extends string>(
+  rows: readonly OutlineRow<Key>[],
+  closedKeys: ReadonlySet<Key>
+): Set<Key> {
+  const hiddenKeys = new Set<Key>();
+  let closedDepth: number | undefined;
+
+  for (const row of rows) {
+    if (closedDepth !== undefined) {
+      if (row.depth > closedDepth) {
+        hiddenKeys.add(row.key);
+      } else {
+        closedDepth = undefined;
+      }
+    }
+
+    if (closedDepth === undefined && closedKeys.has(row.key)) {
+      closedDepth = row.depth;
+    }
+  }
+
+  return hiddenKeys;
+}
+
+export function changeOutlineDepth<Key extends string>(
+  rows: readonly OutlineRow<Key>[],
+  requestedRootKeys: readonly Key[],
+  direction: -1 | 1,
+  maximumDepth: number
+): OutlineMutation<Key> | undefined {
+  const requestedKeySet = new Set(requestedRootKeys);
+  const rootIndexes = rows.flatMap((row, index) => requestedKeySet.has(row.key) ? [index] : []);
+
+  if (rootIndexes.length !== requestedKeySet.size || rootIndexes.length === 0) {
+    return undefined;
+  }
+
+  const firstIndex = rootIndexes[0];
+  const sourceDepth = rows[firstIndex].depth;
+  const parentKey = getOutlineParentKey(rows, firstIndex);
+  const siblingIndexes = rows.flatMap((row, index) =>
+    row.depth === sourceDepth && getOutlineParentKey(rows, index) === parentKey ? [index] : []
+  );
+  const selectedSiblingPositions = siblingIndexes.flatMap((index, position) =>
+    requestedKeySet.has(rows[index].key) ? [position] : []
+  );
+
+  if (
+    rootIndexes.some((index) => rows[index].depth !== sourceDepth) ||
+    selectedSiblingPositions.length !== rootIndexes.length ||
+    selectedSiblingPositions.some(
+      (position, index) => index > 0 && position !== selectedSiblingPositions[index - 1] + 1
+    )
+  ) {
+    return undefined;
+  }
+
+  const subtreeKeys = collectOutlineSubtreeKeys(rows, requestedRootKeys);
+  const movingRows = rows.filter((row) => subtreeKeys.has(row.key));
+
+  if (direction > 0) {
+    const firstSiblingPosition = selectedSiblingPositions[0];
+
+    if (
+      firstSiblingPosition === 0 ||
+      movingRows.some((row) => row.depth >= maximumDepth)
+    ) {
+      return undefined;
+    }
+
+    return {
+      rows: rows.map((row) => subtreeKeys.has(row.key) ? { ...row, depth: row.depth + 1 } : { ...row }),
+      rootKeys: requestedRootKeys.slice()
+    };
+  }
+
+  if (sourceDepth === 0) {
+    return undefined;
+  }
+
+  const parentIndex = findOutlineParentIndex(rows, firstIndex);
+
+  if (parentIndex < 0) {
+    return undefined;
+  }
+
+  let parentSubtreeEnd = rows.length;
+
+  for (let index = parentIndex + 1; index < rows.length; index += 1) {
+    if (rows[index].depth <= rows[parentIndex].depth) {
+      parentSubtreeEnd = index;
+      break;
+    }
+  }
+
+  const remainingRows = rows.filter((row) => !subtreeKeys.has(row.key));
+  const followingKey = rows[parentSubtreeEnd]?.key;
+  const insertAt = followingKey === undefined
+    ? remainingRows.length
+    : remainingRows.findIndex((row) => row.key === followingKey);
+
+  if (insertAt < 0) {
+    return undefined;
+  }
+
+  const adjustedRows = movingRows.map((row) => ({ ...row, depth: row.depth - 1 }));
+  return {
+    rows: [
+      ...remainingRows.slice(0, insertAt),
+      ...adjustedRows,
+      ...remainingRows.slice(insertAt)
+    ],
+    rootKeys: requestedRootKeys.slice()
+  };
+}
+
+function getOutlineParentKey<Key extends string>(
+  rows: readonly OutlineRow<Key>[],
+  index: number
+): Key | undefined {
+  const parentIndex = findOutlineParentIndex(rows, index);
+  return parentIndex >= 0 ? rows[parentIndex].key : undefined;
+}
+
+function findOutlineParentIndex<Key extends string>(
+  rows: readonly OutlineRow<Key>[],
+  index: number
+): number {
+  const depth = rows[index]?.depth ?? 0;
+
+  if (depth === 0) {
+    return -1;
+  }
+
+  for (let candidate = index - 1; candidate >= 0; candidate -= 1) {
+    if (rows[candidate].depth === depth - 1) {
+      return candidate;
+    }
+  }
+
+  return -1;
 }
 
 export function resolveOutlineInsertion<Key extends string>(

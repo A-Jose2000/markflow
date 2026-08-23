@@ -19,6 +19,10 @@ export interface CanonicalBlockSelection {
   keys: string[];
 }
 
+export function areBlockKeyListsEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((key, index) => key === right[index]);
+}
+
 export function resolveHierarchicalBlockSelection(
   model: HierarchySelectionModel,
   anchorKey: string,

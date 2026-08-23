@@ -1,0 +1,25 @@
+@media (max-width: 560px) {
+  .app-topbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .topbar-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mode-switcher {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+
+  .markflow-editor {
+    --lexical-indent-base-value: 20px;
+    --markflow-block-indent-width: 20px;
+    padding: 1rem 0.9rem 4rem 4rem;
+  }
+
+}

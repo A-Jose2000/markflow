@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
 import type { DesktopFileTarget } from "./desktopApi";
+import { desktopTabId } from "./desktop/tabModel";
+
+export { desktopTabId } from "./desktop/tabModel";
 
 const TAB_DRAG_THRESHOLD = 5;
 
@@ -191,10 +194,6 @@ export function DesktopTabs({
       </div>
     </div>
   );
-}
-
-export function desktopTabId(target: Pick<DesktopFileTarget, "rootId" | "relativePath">): string {
-  return `${target.rootId}:${target.relativePath}`;
 }
 
 function tabKindLabel(kind: DesktopFileTarget["kind"]): string {
